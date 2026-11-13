@@ -143,6 +143,7 @@ export async function makeAlpha(rgbaIn, w, h, options = {}) {
   }
 
   const light = bgLum >= 170;
+  const tolerance = Math.max(4, Number(options.tolerance) || 24);
   const dist = new Float32Array(pixels);
   const lum = new Uint8Array(pixels);
   const bin = new Uint8Array(pixels);
@@ -153,7 +154,7 @@ export async function makeAlpha(rgbaIn, w, h, options = {}) {
     const d = Math.sqrt(dr * dr + dg * dg + db * db);
     dist[p] = d;
     lum[p] = (rgba[i] + rgba[i + 1] + rgba[i + 2]) / 3;
-    bin[p] = d < 24 ? 1 : 0;
+    bin[p] = d < tolerance ? 1 : 0;
   }
   await yieldThread();
 
@@ -262,9 +263,11 @@ export async function makeAlpha(rgbaIn, w, h, options = {}) {
     const id = labels[i];
     const bgLike = id && (onBorder[id] || punch[id]);
     if (!bgLike) continue;
-    let soft = smoothstep((dist[i] - 12) / 10);
+    const d0 = tolerance * 0.5;
+    const d1 = tolerance * 0.92;
+    let soft = smoothstep((dist[i] - d0) / Math.max(0.001, d1 - d0));
     if (light && lum[i] >= 247) soft = 0;
-    else if (dist[i] < 10) soft = 0;
+    else if (dist[i] < tolerance * 0.4) soft = 0;
     alpha[i] = soft;
   }
   await yieldThread();

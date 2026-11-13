@@ -1,6 +1,6 @@
 # Print Shop Separator
 
-A phone-friendly site that turns a logo or photo into a print-shop package, entirely in the browser. Nothing is uploaded.
+A phone-friendly site that turns a logo or photo into a print-shop package, entirely in the browser. Nothing is uploaded. Image tools (background removal, crop, resize, color, trace, text) sit on the same page and can hand the result to the package generator.
 
 Open it at [https://geek4945-creator.github.io/print-shop-separator/](https://geek4945-creator.github.io/print-shop-separator/) after the Pages workflow on `main` finishes.
 
@@ -8,7 +8,8 @@ Open it at [https://geek4945-creator.github.io/print-shop-separator/](https://ge
 
 A ZIP with the same breakdown as a hand-built shop package:
 
-- `back/back-print.png` and `back/back-print.pdf` — transparent art at the chosen width, 300 DPI, with pHYs metadata, and a PDF at actual size
+- `back/back-print.png` and `back/back-print.pdf` — transparent art at the back size you set (default 12 in), with DPI metadata, and a PDF at actual size
+- `front/front-print.png` and `front/front-print.pdf` — the same art at the full-front size (default 10 in)
 - `chest/<name>-chest.png` plus `.svg` and `.pdf` — the chest name in a chrome script (Kaushan Script, SIL Open Font License)
 - `chest/<name>-chest-from-source.png` when the source has a mark in the usual chest-logo position
 - `mockups/` — crewneck and tee, front and back, in the chosen color and size
@@ -18,6 +19,12 @@ A ZIP with the same breakdown as a hand-built shop package:
 - `README.txt` and `separations/README-SEPARATIONS.txt`
 
 Dark garments get a white underbase choked about 1 point. Chrome and teal are clustered-dot halftones around 50 LPI with offset screen angles.
+
+Export sizes are in inches by default, in 0.25 in steps. Centimeters and pixels are a secondary toggle. Presets cover left chest (3.5 in), full back (12 in), full front (10 in), youth back (10 in), sleeve (3 in), hat (4 in), and koozie/sticker (3 in). DPI can be 150, 200, 300, 600, or a custom value. The last choices are remembered in this browser. Image-tool downloads can be transparent PNG, JPG, SVG, or a PDF at actual size.
+
+## Image tools
+
+Open Image tools, then Background, Crop, Resize, Adjust, Colors, Trace, Text, or Trim. Each tool previews on the photo. Background removal can use the in-browser model (flood-fill if that model cannot load), a tolerance slider, tap-to-remove-color, an erase/restore brush with pinch-zoom, and an edge feather. Undo and redo keep the last few steps. Download uses the export size, or send the image into the print package.
 
 ## Use it
 

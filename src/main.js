@@ -1,3 +1,6 @@
+import { mountPackageExports } from "./lib/export-size.js";
+import { initTools } from "./tools.js";
+
 const SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"];
 
 const cameraInput = document.querySelector("#camera-input");
@@ -50,6 +53,7 @@ function useFile(next) {
   if (!next) return;
   file = next;
   if (sourcePreview.src) URL.revokeObjectURL(sourcePreview.src);
+  sourcePreview.onload = () => packageSizes.refresh();
   sourcePreview.src = URL.createObjectURL(next);
   stage.hidden = false;
   fileName.textContent = next.name || "Camera photo";
@@ -80,6 +84,31 @@ document.querySelector("#color").addEventListener("input", (event) => {
   event.target.closest(".swatch").classList.add("on");
 });
 
+const packageSizes = mountPackageExports(document.querySelector("#export-sizes"), () => {
+  if (!sourcePreview.naturalWidth) return null;
+  return { w: sourcePreview.naturalWidth, h: sourcePreview.naturalHeight };
+});
+
+function showView(name) {
+  const tools = name === "tools";
+  document.querySelector("#view-print").hidden = tools;
+  document.querySelector("#view-tools").hidden = !tools;
+  document.querySelector("#nav-print").classList.toggle("on", !tools);
+  document.querySelector("#nav-tools").classList.toggle("on", tools);
+  document.querySelector("#nav-print").setAttribute("aria-selected", String(!tools));
+  document.querySelector("#nav-tools").setAttribute("aria-selected", String(tools));
+  if (tools) document.querySelector("#view-tools").dispatchEvent(new Event("tools-show"));
+}
+document.querySelector("#nav-print").addEventListener("click", () => showView("print"));
+document.querySelector("#nav-tools").addEventListener("click", () => showView("tools"));
+initTools({
+  getPrintFile: () => file,
+  usePrintFile: (next) => {
+    useFile(next);
+    showView("print");
+  },
+});
+
 function settings() {
   const garments = [];
   if (document.querySelector("#sweater").checked) {
@@ -88,12 +117,21 @@ function settings() {
   if (document.querySelector("#tee").checked) {
     garments.push({ kind: "tee", size: document.querySelector("#tee-size").value });
   }
+  const sizes = packageSizes.read();
   return {
     name: document.querySelector("#name").value,
     garmentColor: document.querySelector("#color").value,
     garments,
-    backWidthIn: Number(document.querySelector("#back-width").value),
-    chestWidthIn: Number(document.querySelector("#chest-width").value),
+    dpi: sizes.dpi,
+    backWidthIn: sizes.back.widthIn,
+    backHeightIn: sizes.back.lock ? null : sizes.back.heightIn,
+    backLock: sizes.back.lock,
+    frontWidthIn: sizes.front.widthIn,
+    frontHeightIn: sizes.front.lock ? null : sizes.front.heightIn,
+    frontLock: sizes.front.lock,
+    chestWidthIn: sizes.chest.widthIn,
+    chestHeightIn: sizes.chest.lock ? null : sizes.chest.heightIn,
+    chestLock: sizes.chest.lock,
     inkCount: document.querySelector("#inks").value,
   };
 }
@@ -163,8 +201,8 @@ generateBtn.addEventListener("click", async () => {
     const s = msg.summary;
     const warn = s.warnings && s.warnings.length ? ` ${s.warnings.join(" ")}` : "";
     summaryEl.textContent =
-      `${s.files.length} files. Back inks: ${s.backInks.join(", ")}. Chest inks: ${s.chestInks.join(", ")}. ` +
-      `Back ${s.backIn[0].toFixed(2)} × ${s.backIn[1].toFixed(2)} in. Chest ${s.chestIn[0].toFixed(2)} × ${s.chestIn[1].toFixed(2)} in.` +
+      `${s.files.length} files. Back inks: ${s.backInks.join(", ")}. Front inks: ${(s.frontInks || []).join(", ")}. Chest inks: ${s.chestInks.join(", ")}. ` +
+      `Back ${s.backIn[0].toFixed(2)} × ${s.backIn[1].toFixed(2)} in. Front ${s.frontIn[0].toFixed(2)} × ${s.frontIn[1].toFixed(2)} in. Chest ${s.chestIn[0].toFixed(2)} × ${s.chestIn[1].toFixed(2)} in.` +
       warn;
     results.hidden = false;
     statusEl.textContent = "Package ready.";

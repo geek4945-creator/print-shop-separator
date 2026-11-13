@@ -22,6 +22,11 @@
     </header>
 
     <main>
+      <div class="views" role="tablist">
+        <button type="button" class="on" id="nav-print" role="tab" aria-selected="true">Print package</button>
+        <button type="button" id="nav-tools" role="tab" aria-selected="false">Image tools</button>
+      </div>
+      <div id="view-print">
       <section class="card" aria-labelledby="art-heading">
         <h2 id="art-heading">Artwork</h2>
         <div class="actions">
@@ -67,16 +72,7 @@
             <select id="tee-size" aria-label="T-shirt size"></select>
           </label>
         </div>
-        <div class="split">
-          <label class="field">
-            <span>Back width (in)</span>
-            <input id="back-width" type="number" min="6" max="14" step="0.5" value="12" inputmode="decimal" />
-          </label>
-          <label class="field">
-            <span>Chest width (in)</span>
-            <input id="chest-width" type="number" min="1.5" max="6" step="0.1" value="3.5" inputmode="decimal" />
-          </label>
-        </div>
+        <div id="export-sizes"></div>
         <label class="field">
           <span>Screen-print inks</span>
           <select id="inks">
@@ -110,6 +106,42 @@
         </div>
         <img id="film-view" alt="Separation page preview" />
       </section>
+      </div>
+      <div id="view-tools" hidden>
+        <section class="card">
+          <h2>Image tools</h2>
+          <div class="actions">
+            <button type="button" class="btn primary" id="tools-camera">Take photo</button>
+            <button type="button" class="btn" id="tools-upload">Upload image</button>
+          </div>
+          <input id="tools-camera-input" type="file" accept="image/*" capture="environment" hidden />
+          <input id="tools-file-input" type="file" accept="image/*" hidden />
+          <p class="hint" id="tools-file-name">Open a photo here, or switch over after you pick one for the print package.</p>
+        </section>
+        <section class="card" id="tools-work" hidden>
+          <div class="chips" id="tool-chips" role="tablist" aria-label="Tools"></div>
+          <div class="zoom checker" id="zoom">
+            <div id="zoom-inner">
+              <canvas id="tool-canvas"></canvas>
+              <div id="crop-box" hidden></div>
+            </div>
+          </div>
+          <div class="bg-switch" id="bg-switch">
+            <button type="button" class="on" data-bg="checker">Checker</button>
+            <button type="button" data-bg="black">Black</button>
+            <button type="button" data-bg="white">White</button>
+          </div>
+          <div id="tool-controls"></div>
+          <div id="tools-export"></div>
+          <p class="status" id="tools-status"></p>
+          <div class="actions">
+            <button type="button" class="btn" id="undo" disabled>Undo</button>
+            <button type="button" class="btn" id="redo" disabled>Redo</button>
+          </div>
+          <button type="button" class="btn primary block" id="tools-download">Download</button>
+          <button type="button" class="btn block" id="tools-use">Use in print package</button>
+        </section>
+      </div>
     </main>
 
     <footer>
