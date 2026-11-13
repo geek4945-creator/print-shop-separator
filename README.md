@@ -35,11 +35,25 @@ npm run dev
 
 The dev server uses the GitHub Pages base path, so open the `/print-shop-separator/` URL Vite prints.
 
-`npm run build` writes `dist/`. Pushing `main` runs `.github/workflows/pages.yml`, which publishes that folder. Pages is already set to deploy from a workflow.
+`npm run build` writes `dist/` for GitHub Pages. `npm run build:native` writes a relative-path `dist/` for the Android and Windows shells. Pushing `main` runs `.github/workflows/pages.yml`, which publishes the site. Pages is already set to deploy from a workflow.
+
+## Android and Windows
+
+The same site is wrapped for sideloading:
+
+- Android uses Capacitor. The camera prompt and ZIP share sheet are used when the page is running inside the app. CI builds a debug APK, `print-shop-separator.apk` (signed with the debug keystore, not a Play signing key).
+- Windows uses Electron. CI builds an unsigned NSIS installer, `Print-Shop-Separator-Setup.exe`. The desktop shell asks where to save the ZIP and runs Real-ESRGAN with a larger tile.
+
+`.github/workflows/native.yml` builds both on pull requests, on every push to `main`, and on tags `v*`. Pull requests and `main` keep the files as Actions artifacts. A tag such as `v1.0.0` also publishes them on the [Releases](https://github.com/geek4945-creator/print-shop-separator/releases) page.
+
+Install notes:
+
+- Android: download `print-shop-separator.apk`, allow install from unknown sources (or “Install unknown apps” for the browser), then open the file.
+- Windows: download `Print-Shop-Separator-Setup.exe`. SmartScreen will say it is unrecognized because the installer is unsigned. Choose More info, then Run anyway.
 
 ## Limits
 
-- The back art is enlarged with Lanczos resampling and a light sharpen. It is not the desktop Real-ESRGAN (`realesr-general-x4v3`) pass the original Python package used, so fine spokes and hairline type are a bit softer.
+- Back art is upscaled with tiled Real-ESRGAN (`realesr-general-x4v3`) in ONNX Runtime Web: WebGPU when the browser has it, otherwise single-thread WASM. Phones use 128 px tiles and cap the long edge around 3000 px. The Android and Windows apps use larger tiles and up to a 4096 px edge. If the model cannot load, the app falls back to Lanczos. The matte runs after the upscale and defringes light edges so chrome picks up less of a white halo. It is still not identical to a desktop 4× pass that keeps the full-resolution buffer.
 - Flat white or flat dark backgrounds are knocked out with the same flood-fill idea as that package (letter counters opened, whitewalls kept). Busy photos try a small in-browser removal model from a CDN and fall back to the flood-fill if the model cannot load.
 - Film pages in the PDF are real 1-bit images at 600 DPI. On a phone, a 12 inch back print is a lot of pixels and can take a minute. Very large photos are scaled so the long edge is about 2200 px before the 300 DPI fit.
 - Separations are a spot-color reading of a photograph. DTG or DTF still matches the original more closely.

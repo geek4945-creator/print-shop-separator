@@ -1,8 +1,9 @@
 import { defineConfig } from "vite";
 
-// GitHub Pages project site: https://geek4945-creator.github.io/print-shop-separator/
+// GitHub Pages uses the project base. Native shells (Android, Windows) load from the app root.
+const native = process.env.NATIVE_BUILD === "1";
 export default defineConfig({
-  base: "/print-shop-separator/",
+  base: native ? "./" : "/print-shop-separator/",
   build: {
     target: "es2022",
     sourcemap: false,

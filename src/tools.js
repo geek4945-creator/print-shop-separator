@@ -1,4 +1,5 @@
 import fontUrl from "./assets/KaushanScript-Regular.ttf?url";
+import { captureNativePhoto } from "./lib/native.js";
 import { loadStore, saveStore, mountSizeRow, DPI_CHOICES } from "./lib/export-size.js";
 import { encodeRGBA } from "./lib/png.js";
 import { buildArtPdf } from "./lib/pdf.js";
@@ -817,7 +818,18 @@ export function initTools({ getPrintFile, usePrintFile }) {
   }
   renderControls();
 
-  document.querySelector("#tools-camera").addEventListener("click", () => document.querySelector("#tools-camera-input").click());
+  document.querySelector("#tools-camera").addEventListener("click", async () => {
+    try {
+      const photo = await captureNativePhoto();
+      if (photo) {
+        await loadFile(photo);
+        return;
+      }
+    } catch (err) {
+      setStatus(err.message || String(err));
+    }
+    document.querySelector("#tools-camera-input").click();
+  });
   document.querySelector("#tools-upload").addEventListener("click", () => document.querySelector("#tools-file-input").click());
   document.querySelector("#tools-camera-input").addEventListener("change", (event) => {
     const file = event.target.files && event.target.files[0];

@@ -1,0 +1,6 @@
+realesr-general-x4v3.onnx
+Real-ESRGAN general v3, BSD 3-Clause.
+Original weights: xinntao/Real-ESRGAN release v0.2.5.0 (Tencent ARC Lab, Xintao Wang et al.).
+ONNX export used here: https://huggingface.co/skillsafe-ai/realesr-general-x4v3 (model.onnx).
+The network weights are unchanged from the official release. This file is bundled so the
+print app can upscale offline, including the Android and Windows builds.

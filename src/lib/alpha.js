@@ -306,6 +306,7 @@ export async function makeAlpha(rgbaIn, w, h, options = {}) {
     out[i + 2] = b;
     out[i + 3] = Math.round(clamp(a, 0, 1) * 255);
   }
+  if (light) defringeLight(out, w, h, bg);
 
   // A failed matte (almost everything removed, or almost nothing) should
   // fall through to the neural model when the caller has one.
@@ -323,6 +324,45 @@ export async function makeAlpha(rgbaIn, w, h, options = {}) {
     };
   }
   return { rgba: out, w, h, mode: light ? "light-flood" : "dark-flood" };
+}
+
+/** Pull near-white fringe off chrome and painted edges after the flood matte. */
+function defringeLight(out, w, h, bg) {
+  const n = w * h;
+  const alpha = new Float32Array(n);
+  for (let i = 0; i < n; i++) alpha[i] = out[i * 4 + 3] / 255;
+  const blurred = gaussianBlur(alpha, w, h, 0.8);
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const p = y * w + x;
+      const o = p * 4;
+      const a = out[o + 3];
+      if (a < 8 || a > 250) continue;
+      const nearHole =
+        out[o - 1] < 16 ||
+        out[o + 7] < 16 ||
+        out[o - w * 4 + 3] < 16 ||
+        out[o + w * 4 + 3] < 16;
+      if (!nearHole && blurred[p] > 0.92) continue;
+      const dr = out[o] - bg[0];
+      const dg = out[o + 1] - bg[1];
+      const db = out[o + 2] - bg[2];
+      const dist = Math.sqrt(dr * dr + dg * dg + db * db);
+      if (dist > 36) continue;
+      const keep = clamp(dist / 28, 0, 1);
+      const next = a * keep * (blurred[p] < 0.35 ? 0.65 : 1);
+      const na = clamp(next / 255, 0, 1);
+      if (na <= 0.02) {
+        out[o] = out[o + 1] = out[o + 2] = out[o + 3] = 0;
+        continue;
+      }
+      const ia = 1 / Math.max(na, 1e-4);
+      out[o] = clamp((out[o] - (1 - na) * bg[0]) * ia, 0, 255);
+      out[o + 1] = clamp((out[o + 1] - (1 - na) * bg[1]) * ia, 0, 255);
+      out[o + 2] = clamp((out[o + 2] - (1 - na) * bg[2]) * ia, 0, 255);
+      out[o + 3] = Math.round(na * 255);
+    }
+  }
 }
 
 /** Apply an RGBA matte (straight alpha) over `rgba` which may be opaque. */

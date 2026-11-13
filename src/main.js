@@ -1,4 +1,5 @@
 import { mountPackageExports } from "./lib/export-size.js";
+import { captureNativePhoto, deliverZip, upscaleProfile } from "./lib/native.js";
 import { initTools } from "./tools.js";
 
 const SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"];
@@ -23,6 +24,7 @@ let file = null;
 let worker = null;
 let zipUrl = null;
 let zipName = "print-files.zip";
+let zipBytesCache = null;
 let films = [];
 let filmIndex = 0;
 const urls = [];
@@ -61,7 +63,19 @@ function useFile(next) {
   errorEl.hidden = true;
 }
 
-document.querySelector("#take-photo").addEventListener("click", () => cameraInput.click());
+document.querySelector("#take-photo").addEventListener("click", async () => {
+  try {
+    const photo = await captureNativePhoto();
+    if (photo) {
+      useFile(photo);
+      return;
+    }
+  } catch (err) {
+    errorEl.hidden = false;
+    errorEl.textContent = err.message || String(err);
+  }
+  cameraInput.click();
+});
 document.querySelector("#upload").addEventListener("click", () => fileInput.click());
 cameraInput.addEventListener("change", () => {
   useFile(cameraInput.files && cameraInput.files[0]);
@@ -133,6 +147,7 @@ function settings() {
     chestHeightIn: sizes.chest.lock ? null : sizes.chest.heightIn,
     chestLock: sizes.chest.lock,
     inkCount: document.querySelector("#inks").value,
+    upscaleProfile: upscaleProfile(),
   };
 }
 
@@ -179,6 +194,7 @@ generateBtn.addEventListener("click", async () => {
     clearUrls();
     if (zipUrl) URL.revokeObjectURL(zipUrl);
     zipName = msg.zipName;
+    zipBytesCache = msg.zipBytes;
     zipUrl = URL.createObjectURL(new Blob([msg.zipBytes], { type: "application/zip" }));
     const previewUrls = msg.previews.map((p) => ({
       ...p,
@@ -213,8 +229,15 @@ generateBtn.addEventListener("click", async () => {
   worker.postMessage({ type: "generate", buffer, settings: settings() }, [buffer]);
 });
 
-document.querySelector("#download").addEventListener("click", () => {
-  if (!zipUrl) return;
+document.querySelector("#download").addEventListener("click", async () => {
+  if (!zipBytesCache) return;
+  try {
+    const handled = await deliverZip(zipBytesCache, zipName);
+    if (handled) return;
+  } catch (err) {
+    errorEl.hidden = false;
+    errorEl.textContent = err.message || String(err);
+  }
   const a = document.createElement("a");
   a.href = zipUrl;
   a.download = zipName;

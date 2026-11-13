@@ -1,0 +1,11 @@
+{
+  "appId": "io.github.geek4945.printshop",
+  "appName": "Print Shop Separator",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

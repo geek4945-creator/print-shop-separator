@@ -1,5 +1,6 @@
 import JSZip from "jszip";
 import { makeAlpha } from "./alpha.js";
+import { upscaleRgba } from "./upscale.js";
 import { renderChrome } from "./chrome.js";
 import {
   clamp,
@@ -284,20 +285,39 @@ export async function buildPackage(font, rgbaIn, width, height, settings, report
     : "auto";
   const tuned = { ...settings, name, inkCount, darkGarment, backWidthIn, frontWidthIn, chestWidthIn, dpi };
 
-  await report(6, "Removing the background");
-  let matted = await makeAlpha(rgbaIn, width, height);
+  const profile = settings.upscaleProfile || {};
+  const printLong = Math.round(Math.max(backWidthIn, frontWidthIn) * dpi * Math.max(width, height) / Math.max(width, 1));
+  const targetLong = Math.min(profile.longEdge || 3000, Math.max(Math.max(width, height), printLong));
+  let working = { rgba: rgbaIn, w: width, h: height, mode: "none" };
+  if (targetLong > Math.max(width, height) * 1.05) {
+    await report(5, "Upscaling the artwork");
+    working = await upscaleRgba(rgbaIn, width, height, {
+      targetLong,
+      tile: profile.tile || 128,
+      overlap: profile.native ? 24 : 16,
+      onProgress: async (frac) => {
+        await report(5 + frac * 8, `Upscaling ${Math.round(frac * 100)}%`);
+      },
+    });
+    if (working.warning) warnings.push(working.warning);
+    else if (working.mode === "realesrgan") {
+      warnings.push("Back art was upscaled with tiled Real-ESRGAN (realesr-general-x4v3), then matted at the higher resolution.");
+    }
+  }
+  await report(14, "Removing the background");
+  let matted = await makeAlpha(working.rgba, working.w, working.h);
   if (matted.needsModel && settings.removeComplex) {
     try {
       await report(8, "Background is busy — running the removal model");
-      const removed = await settings.removeComplex(rgbaIn, width, height);
+      const removed = await settings.removeComplex(working.rgba, working.w, working.h);
       if (removed) matted = { rgba: removed.rgba, w: removed.w, h: removed.h, mode: "model" };
     } catch (err) {
       warnings.push(`Background model was unavailable (${err.message || err}). Used a color flood-fill instead.`);
-      if (matted.mode === "complex") matted = await makeAlpha(rgbaIn, width, height, { force: true });
+      if (matted.mode === "complex") matted = await makeAlpha(working.rgba, working.w, working.h, { force: true });
     }
   } else if (matted.needsModel && matted.mode === "complex") {
     warnings.push("Background is not a flat color, so a simple flood-fill was used. Edges may need a cleanup.");
-    matted = await makeAlpha(rgbaIn, width, height, { force: true });
+    matted = await makeAlpha(working.rgba, working.w, working.h, { force: true });
   }
   if (matted.warning) warnings.push(matted.warning);
   await report(18, "Fitting the prints");
@@ -494,7 +514,7 @@ export async function buildPackage(font, rgbaIn, width, height, settings, report
     notes: [
       `Transparent PNGs at ${dpi} DPI. Do not place them on a white box.`,
       "Do not re-sharpen or auto-enhance the print files.",
-      "Upscale is Lanczos resampling plus a light sharpen. It is not a neural Real-ESRGAN upscale.",
+      "Upscale prefers tiled Real-ESRGAN (realesr-general-x4v3) and falls back to Lanczos. The matte runs after the upscale so chrome edges lose less of their white halo.",
       "Screen films are a limited spot-color reading of the art. DTG or DTF will match a photo more closely.",
       underbaseNote,
       "Mockups are a placement guide only, not print files.",
