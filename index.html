@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#101114" />
+    <meta
+      name="description"
+      content="Turn a logo or photo into a print-shop package: 300 DPI art, a chest name, mockups, a spec sheet, and screen-print color separations."
+    />
+    <title>Print Shop Separator</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect fill='%23101416' width='32' height='32' rx='6'/%3E%3Cpath fill='%233aa8a2' d='M6 22 V8 h4.2 c3.2 0 5 1.6 5 4.1 0 1.7-.9 3-2.4 3.6 1.8.5 2.9 1.9 2.9 3.8 0 2.7-2 4.5-5.4 4.5H6zm4.1-8.2h.2c1.4 0 2.2-.7 2.2-1.8S11.6 10.2 10.2 10.2H10v3.6zm0 6.2h.5c1.6 0 2.5-.7 2.5-2s-.9-2-2.5-2H10v4z'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="top">
+      <p class="brand">Print Shop Separator</p>
+      <h1>Print files from a photo</h1>
+      <p class="lede">
+        Background removed, sized at 300 DPI, with a chrome chest name, garment mockups, a one-page spec, and screen-print films.
+      </p>
+    </header>
+
+    <main>
+      <div class="views" role="tablist">
+        <button type="button" class="on" id="nav-print" role="tab" aria-selected="true">Print package</button>
+        <button type="button" id="nav-tools" role="tab" aria-selected="false">Image tools</button>
+      </div>
+      <div id="view-print">
+      <section class="card" aria-labelledby="art-heading">
+        <h2 id="art-heading">Artwork</h2>
+        <div class="actions">
+          <button type="button" class="btn primary" id="take-photo">Take photo</button>
+          <button type="button" class="btn" id="upload">Upload image</button>
+        </div>
+        <input id="camera-input" type="file" accept="image/*" capture="environment" hidden />
+        <input id="file-input" type="file" accept="image/*" hidden />
+        <p class="hint" id="file-name">JPEG or PNG. On a phone, use the camera or your photo library.</p>
+        <div class="stage" id="stage" hidden>
+          <img id="source-preview" alt="Selected artwork" />
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>Print setup</h2>
+        <label class="field">
+          <span>Left-chest name</span>
+          <input id="name" type="text" value="Stu" maxlength="32" autocomplete="off" />
+        </label>
+        <div class="field">
+          <span>Garment color</span>
+          <div class="swatches" id="swatches">
+            <button type="button" class="swatch on" data-color="#111111" style="background:#111" aria-label="Black"></button>
+            <button type="button" class="swatch" data-color="#1c2430" style="background:#1c2430" aria-label="Navy"></button>
+            <button type="button" class="swatch" data-color="#3a1212" style="background:#3a1212" aria-label="Maroon"></button>
+            <button type="button" class="swatch" data-color="#163024" style="background:#163024" aria-label="Forest"></button>
+            <button type="button" class="swatch" data-color="#f4f1ea" style="background:#f4f1ea" aria-label="Natural"></button>
+            <label class="swatch custom">
+              <input id="color" type="color" value="#111111" aria-label="Custom garment color" />
+            </label>
+          </div>
+        </div>
+        <div class="garments">
+          <label class="check">
+            <input type="checkbox" id="sweater" checked />
+            <span>Crewneck sweatshirt</span>
+            <select id="sweater-size" aria-label="Sweatshirt size"></select>
+          </label>
+          <label class="check">
+            <input type="checkbox" id="tee" checked />
+            <span>T-shirt</span>
+            <select id="tee-size" aria-label="T-shirt size"></select>
+          </label>
+        </div>
+        <div id="export-sizes"></div>
+        <label class="field">
+          <span>Screen-print inks</span>
+          <select id="inks">
+            <option value="auto" selected>Auto (about 4–6)</option>
+            <option value="4">4 inks</option>
+            <option value="5">5 inks</option>
+            <option value="6">6 inks</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="card">
+        <button type="button" class="btn primary block" id="generate" disabled>Generate package</button>
+        <p class="status" id="status" hidden></p>
+        <div class="bar" id="bar" hidden><span id="bar-fill"></span></div>
+        <p class="hint">Everything runs on this device. A 12 inch back print can take a minute on a phone. Keep this tab open.</p>
+        <p class="error" id="error" hidden></p>
+      </section>
+
+      <section class="card" id="results" hidden>
+        <h2>Package</h2>
+        <p id="summary"></p>
+        <button type="button" class="btn primary block" id="download">Download ZIP</button>
+        <div class="gallery" id="mockups"></div>
+        <h3>Separation pages</h3>
+        <p class="hint">Film pages are black and white. The first page of each location is the color composite, not a film.</p>
+        <div class="pager">
+          <button type="button" class="btn" id="film-prev" aria-label="Previous separation page">Prev</button>
+          <p id="film-title"></p>
+          <button type="button" class="btn" id="film-next" aria-label="Next separation page">Next</button>
+        </div>
+        <img id="film-view" alt="Separation page preview" />
+      </section>
+      </div>
+      <div id="view-tools" hidden>
+        <section class="card">
+          <h2>Image tools</h2>
+          <div class="actions">
+            <button type="button" class="btn primary" id="tools-camera">Take photo</button>
+            <button type="button" class="btn" id="tools-upload">Upload image</button>
+          </div>
+          <input id="tools-camera-input" type="file" accept="image/*" capture="environment" hidden />
+          <input id="tools-file-input" type="file" accept="image/*" hidden />
+          <p class="hint" id="tools-file-name">Open a photo here, or switch over after you pick one for the print package.</p>
+        </section>
+        <section class="card" id="tools-work" hidden>
+          <div class="chips" id="tool-chips" role="tablist" aria-label="Tools"></div>
+          <div class="zoom checker" id="zoom">
+            <div id="zoom-inner">
+              <canvas id="tool-canvas"></canvas>
+              <div id="crop-box" hidden></div>
+            </div>
+          </div>
+          <div class="bg-switch" id="bg-switch">
+            <button type="button" class="on" data-bg="checker">Checker</button>
+            <button type="button" data-bg="black">Black</button>
+            <button type="button" data-bg="white">White</button>
+          </div>
+          <div id="tool-controls"></div>
+          <div id="tools-export"></div>
+          <p class="status" id="tools-status"></p>
+          <div class="actions">
+            <button type="button" class="btn" id="undo" disabled>Undo</button>
+            <button type="button" class="btn" id="redo" disabled>Redo</button>
+          </div>
+          <button type="button" class="btn primary block" id="tools-download">Download</button>
+          <button type="button" class="btn block" id="tools-use">Use in print package</button>
+        </section>
+      </div>
+    </main>
+
+    <footer>
+      <p>
+        Films are spot-color separations for a shop, not a photograph. Back art is upscaled with tiled Real-ESRGAN when the model loads, otherwise Lanczos.
+        Chest lettering is <a href="https://openfontlicense.org">Kaushan Script</a>, SIL Open Font License.
+      </p>
+      <p>
+        Install the app:
+        <a href="https://github.com/geek4945-creator/print-shop-separator/releases">Android APK</a>
+        (allow unknown sources) or
+        <a href="https://github.com/geek4945-creator/print-shop-separator/releases">Windows installer</a>
+        (SmartScreen → More info → Run anyway; the build is unsigned).
+        Look for <code>print-shop-separator.apk</code> and <code>Print-Shop-Separator-Setup.exe</code> on a version tag such as v1.0.0.
+      </p>
+    </footer>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

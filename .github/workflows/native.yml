@@ -1,0 +1,100 @@
+name: Native apps
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install Android platform packages
+        run: |
+          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> "$GITHUB_ENV"
+          SDK=/usr/local/lib/android/sdk
+          MANAGER=$(find "$SDK/cmdline-tools" -type f -name sdkmanager | head -1)
+          yes | "$MANAGER" --licenses >/dev/null || true
+          "$MANAGER" "platforms;android-35" "build-tools;35.0.0"
+      - name: Install web dependencies
+        run: npm ci
+      - name: Build the web app for the native shell
+        run: npm run build:native
+      - name: Add the Android project
+        run: npx cap add android && npx cap sync android
+      - name: Assemble a debug APK
+        working-directory: android
+        run: chmod +x ./gradlew && ./gradlew assembleDebug --no-daemon
+      - name: Name the APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk print-shop-separator.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: print-shop-separator-android
+          path: print-shop-separator.apk
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Install web dependencies
+        run: npm ci
+      - name: Build the web app for the native shell
+        run: npm run build:native
+        env:
+          NATIVE_BUILD: "1"
+      - name: Install the Windows shell
+        working-directory: desktop
+        run: npm ci
+      - name: Build the unsigned installer
+        working-directory: desktop
+        run: npx electron-builder --win nsis
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: print-shop-separator-windows
+          path: desktop/release/Print-Shop-Separator-Setup.exe
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [android, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-assets/print-shop-separator-android/print-shop-separator.apk
+            release-assets/print-shop-separator-windows/Print-Shop-Separator-Setup.exe
+          generate_release_notes: true
+          fail_on_unmatched_files: true
