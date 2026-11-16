@@ -13,7 +13,7 @@ import {
   unsharpRGB,
   yieldThread,
 } from "./image.js";
-import { drawGarment, placePrint } from "./mockup.js";
+import { drawCuff, drawGarment, placePrint } from "./mockup.js";
 import { encodeGray1, encodeRGB, encodeRGBA, setPngDpi } from "./png.js";
 import { buildArtPdf, buildSeparationPdf, buildSpecPdf, buildVectorPdf, pageGeometry } from "./pdf.js";
 import { DPI, FILM_DPI, extractChannels, halftoneBits, simulateComposite } from "./separate.js";
@@ -93,7 +93,7 @@ async function toJpeg(rgba, w, h, maxW = 780) {
   return new Uint8Array(await blob.arrayBuffer());
 }
 
-async function filmPreview({ location, title, ink, inkCount, pageIndex, pages, bits, filmW, filmH, sim, artWIn, artHIn }) {
+async function filmPreview({ location, title, ink, inks, inkCount, pageIndex, pages, bits, filmW, filmH, sim, artWIn, artHIn }) {
   const geom = pageGeometry(artWIn, artHIn);
   const W = 820;
   const H = Math.max(1, Math.round(W * (geom.pageH / geom.pageW)));
@@ -120,6 +120,28 @@ async function filmPreview({ location, title, ink, inkCount, pageIndex, pages, b
     ctx.fillText(ink.pantone, 22, 82);
     const screen = ink.lpi ? `${ink.lpi} LPI @ ${ink.angle}°` : "50 LPI @ 45° where not solid";
     ctx.fillText(`Print order ${ink.order} of ${inkCount}   ·   ${screen}`, 22, 102);
+  } else if (inks && inks.length) {
+    ctx.font = "12px sans-serif";
+    ctx.fillStyle = "#111";
+    ctx.fillText("Print order", 22, 82);
+    let x = 22;
+    let y = 108;
+    for (const item of inks) {
+      const label = `${item.order}. ${item.short}`;
+      const w = ctx.measureText(label).width + 40;
+      if (x + w > W - 16) {
+        x = 22;
+        y += 22;
+      }
+      ctx.fillStyle = item.hex;
+      ctx.fillRect(x, y - 12, 18, 14);
+      ctx.strokeStyle = "#111";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x, y - 12, 18, 14);
+      ctx.fillStyle = "#111";
+      ctx.fillText(label, x + 22, y);
+      x += w;
+    }
   }
   const ax = geom.artX * s;
   const ay = (geom.pageH - geom.artY - geom.artH) * s;
@@ -164,26 +186,6 @@ async function filmPreview({ location, title, ink, inkCount, pageIndex, pages, b
   return new Uint8Array(await blob.arrayBuffer());
 }
 
-function extractFromSource(rgba, w, h, targetW) {
-  const x0 = clamp(Math.round((1388 / 2048) * w), 0, w - 2);
-  const y0 = clamp(Math.round((70 / 1152) * h), 0, h - 2);
-  const x1 = clamp(Math.round((1705 / 2048) * w), x0 + 1, w);
-  const y1 = clamp(Math.round((510 / 1152) * h), y0 + 1, h);
-  const cw = x1 - x0;
-  const ch = y1 - y0;
-  const crop = new Uint8ClampedArray(cw * ch * 4);
-  let mass = 0;
-  for (let y = 0; y < ch; y++) {
-    const src = ((y0 + y) * w + x0) * 4;
-    crop.set(rgba.subarray(src, src + cw * 4), y * cw * 4);
-  }
-  for (let i = 3; i < crop.length; i += 4) if (crop[i] > 16) mass++;
-  if (mass < 400) return null;
-  const cropped = cropToContent(crop, cw, ch, 6);
-  const dh = Math.max(1, Math.round(cropped.h * (targetW / cropped.w)));
-  return { rgba: resizeRGBA(cropped.rgba, cropped.w, cropped.h, targetW, dh), w: targetW, h: dh };
-}
-
 async function buildFilms(rgba, w, h, kind, settings, artWIn, artHIn, location, placement, report, pct0, previews, artDpi = DPI) {
   const extracted = await extractChannels(rgba, w, h, kind, {
     inkCount: settings.inkCount,
@@ -203,6 +205,7 @@ async function buildFilms(rgba, w, h, kind, settings, artWIn, artHIn, location, 
       location,
       title: "COMPOSITE PREVIEW + INK LIST (not a film)",
       ink: null,
+      inks: channels,
       pageIndex: 1,
       pages,
       sim,
@@ -256,19 +259,113 @@ async function buildFilms(rgba, w, h, kind, settings, artWIn, artHIn, location, 
   return { pdf, pngs, channels };
 }
 
-export async function buildPackage(font, rgbaIn, width, height, settings, report) {
+const LOCATIONS = {
+  back: {
+    label: "Back",
+    folder: "back",
+    stem: "back-print",
+    title: "BACK PRINT",
+    placement: "Place centered on the back, top of the art about 3.5 in below the collar.",
+    defaultWidth: 12,
+    maxWidth: 20,
+    view: "back",
+  },
+  front: {
+    label: "Front",
+    folder: "front",
+    stem: "front-print",
+    title: "FRONT PRINT",
+    placement: "Centered on the front of the garment.",
+    defaultWidth: 12,
+    maxWidth: 20,
+    view: "front",
+  },
+  name: {
+    label: "Name plate",
+    folder: "name",
+    stem: null,
+    title: "NAME PLATE",
+    placement: "Wearer's left chest: about 3.75 in down from the shoulder seam, centered about 4 in from center front.",
+    defaultWidth: 3.75,
+    maxWidth: 8,
+    view: "front",
+    text: true,
+  },
+  cuff: {
+    label: "Shirt cuff",
+    folder: "cuff",
+    stem: "cuff-print",
+    title: "SHIRT CUFF",
+    placement: "Center the plate on the sleeve cuff band.",
+    defaultWidth: 3,
+    maxWidth: 8,
+    cuff: true,
+  },
+};
+
+function placeOnGarment(meta, scene, art, widthIn) {
+  if (meta.view === "back") {
+    const top = scene.collarBottom + 3.5 * scene.pxPerIn;
+    return placePrint(scene, art.rgba, art.w, art.h, widthIn, scene.centerX, top);
+  }
+  if (art.id === "name") {
+    const cx = scene.centerX + 4 * scene.pxPerIn;
+    const top = scene.shoulderY + 3.75 * scene.pxPerIn;
+    return placePrint(scene, art.rgba, art.w, art.h, widthIn, cx, top);
+  }
+  const top = scene.collarBottom + 2.25 * scene.pxPerIn;
+  return placePrint(scene, art.rgba, art.w, art.h, widthIn, scene.centerX, top);
+}
+
+async function preparePhoto(rgba, w, h, widthIn, heightIn, lock, dpi, profile, removeComplex, report, warnings, label, pct0) {
+  const printLong = Math.round(widthIn * dpi * Math.max(w, h) / Math.max(w, 1));
+  const targetLong = Math.min(profile.longEdge || 3000, Math.max(Math.max(w, h), printLong));
+  let working = { rgba, w, h, mode: "none" };
+  if (targetLong > Math.max(w, h) * 1.05) {
+    await report(pct0, `Upscaling the ${label.toLowerCase()}`);
+    working = await upscaleRgba(rgba, w, h, {
+      targetLong,
+      tile: profile.tile || 128,
+      overlap: profile.native ? 24 : 16,
+      onProgress: async (frac) => {
+        await report(pct0 + frac * 4, `Upscaling ${label.toLowerCase()} ${Math.round(frac * 100)}%`);
+      },
+    });
+    if (working.warning) warnings.push(working.warning);
+    else if (working.mode === "realesrgan") {
+      warnings.push(`${label} was upscaled with tiled Real-ESRGAN (realesr-general-x4v3), then matted at the higher resolution.`);
+    }
+  }
+  let matted = await makeAlpha(working.rgba, working.w, working.h);
+  if (matted.needsModel && removeComplex) {
+    try {
+      await report(pct0 + 4, `${label}: removing a busy background`);
+      const removed = await removeComplex(working.rgba, working.w, working.h);
+      if (removed) matted = { rgba: removed.rgba, w: removed.w, h: removed.h, mode: "model" };
+    } catch (err) {
+      warnings.push(`Background model was unavailable (${err.message || err}). Used a color flood-fill instead.`);
+      if (matted.mode === "complex") matted = await makeAlpha(working.rgba, working.w, working.h, { force: true });
+    }
+  } else if (matted.needsModel && matted.mode === "complex") {
+    warnings.push(`${label} background is not a flat color, so a simple flood-fill was used. Edges may need a cleanup.`);
+    matted = await makeAlpha(working.rgba, working.w, working.h, { force: true });
+  }
+  if (matted.warning) warnings.push(matted.warning);
+  const cropped = cropToContent(matted.rgba, matted.w, matted.h, 0);
+  const fitted = fitPrint(cropped, widthIn, heightIn, lock, dpi);
+  if (fitted.w > cropped.w * 1.5) {
+    warnings.push(`${label} is enlarged about ${(fitted.w / cropped.w).toFixed(1)}× from the source. Fine detail will be softer than a native file.`);
+  }
+  return fitted;
+}
+
+export async function buildPackage(font, locationsIn, settings, report) {
   const warnings = [];
   const name = (settings.name || "Stu").trim().slice(0, 32) || "Stu";
   const slug = slugName(name);
   const color = settings.garmentColor || "#111111";
   const darkGarment = relLuminance(color) < 0.35;
   const dpi = clamp(Number(settings.dpi) || DPI, 72, 600);
-  const backWidthIn = clamp(Number(settings.backWidthIn) || 12, 0.5, 20);
-  const frontWidthIn = clamp(Number(settings.frontWidthIn) || 10, 0.5, 20);
-  const chestWidthIn = clamp(Number(settings.chestWidthIn) || 3.5, 0.5, 12);
-  const backLock = settings.backLock !== false;
-  const frontLock = settings.frontLock !== false;
-  const chestLock = settings.chestLock !== false;
   let garments = Array.isArray(settings.garments) ? settings.garments.filter((g) => g && (g.kind === "sweater" || g.kind === "tee")) : [];
   if (!garments.length) {
     garments = [
@@ -276,113 +373,75 @@ export async function buildPackage(font, rgbaIn, width, height, settings, report
       { kind: "tee", size: "XL" },
     ];
   }
-  garments = garments.map((g) => ({
-    kind: g.kind,
-    size: BODY_IN[g.size] ? g.size : "XL",
-  }));
+  garments = garments.map((g) => ({ kind: g.kind, size: BODY_IN[g.size] ? g.size : "XL" }));
   const inkCount = settings.inkCount === 4 || settings.inkCount === 5 || settings.inkCount === 6 || settings.inkCount === "4" || settings.inkCount === "5" || settings.inkCount === "6"
     ? Number(settings.inkCount)
     : "auto";
-  const tuned = { ...settings, name, inkCount, darkGarment, backWidthIn, frontWidthIn, chestWidthIn, dpi };
-
+  const tuned = { ...settings, name, inkCount, darkGarment, dpi };
   const profile = settings.upscaleProfile || {};
-  const printLong = Math.round(Math.max(backWidthIn, frontWidthIn) * dpi * Math.max(width, height) / Math.max(width, 1));
-  const targetLong = Math.min(profile.longEdge || 3000, Math.max(Math.max(width, height), printLong));
-  let working = { rgba: rgbaIn, w: width, h: height, mode: "none" };
-  if (targetLong > Math.max(width, height) * 1.05) {
-    await report(5, "Upscaling the artwork");
-    working = await upscaleRgba(rgbaIn, width, height, {
-      targetLong,
-      tile: profile.tile || 128,
-      overlap: profile.native ? 24 : 16,
-      onProgress: async (frac) => {
-        await report(5 + frac * 8, `Upscaling ${Math.round(frac * 100)}%`);
-      },
-    });
-    if (working.warning) warnings.push(working.warning);
-    else if (working.mode === "realesrgan") {
-      warnings.push("Back art was upscaled with tiled Real-ESRGAN (realesr-general-x4v3), then matted at the higher resolution.");
-    }
-  }
-  await report(14, "Removing the background");
-  let matted = await makeAlpha(working.rgba, working.w, working.h);
-  if (matted.needsModel && settings.removeComplex) {
-    try {
-      await report(8, "Background is busy — running the removal model");
-      const removed = await settings.removeComplex(working.rgba, working.w, working.h);
-      if (removed) matted = { rgba: removed.rgba, w: removed.w, h: removed.h, mode: "model" };
-    } catch (err) {
-      warnings.push(`Background model was unavailable (${err.message || err}). Used a color flood-fill instead.`);
-      if (matted.mode === "complex") matted = await makeAlpha(working.rgba, working.w, working.h, { force: true });
-    }
-  } else if (matted.needsModel && matted.mode === "complex") {
-    warnings.push("Background is not a flat color, so a simple flood-fill was used. Edges may need a cleanup.");
-    matted = await makeAlpha(working.rgba, working.w, working.h, { force: true });
-  }
-  if (matted.warning) warnings.push(matted.warning);
-  await report(18, "Fitting the prints");
-
-  const chestTarget = Math.round(chestWidthIn * dpi);
-  const fromSource = extractFromSource(matted.rgba, matted.w, matted.h, chestTarget);
-  const cropped = cropToContent(matted.rgba, matted.w, matted.h, 0);
-  const back = fitPrint(cropped, backWidthIn, settings.backHeightIn, backLock, dpi);
-  const front = backWidthIn === frontWidthIn && backLock && frontLock
-    ? back
-    : fitPrint(cropped, frontWidthIn, settings.frontHeightIn, frontLock, dpi);
-  const backIn = back.inches;
-  const frontIn = front.inches;
-  if (back.w > cropped.w * 1.5) {
-    warnings.push(`Back art is enlarged about ${(back.w / cropped.w).toFixed(1)}× from the source. Fine detail will be softer than a native file.`);
-  }
-  await report(30, "Drawing the chest name");
-  let chest = await renderChrome(font, name, chestTarget);
-  if (!chestLock && settings.chestHeightIn) {
-    const boxH = Math.max(16, Math.round(Number(settings.chestHeightIn) * dpi));
-    const scale = Math.min(chestTarget / chest.w, boxH / chest.h);
-    const fw = Math.max(1, Math.round(chest.w * scale));
-    const fh = Math.max(1, Math.round(chest.h * scale));
-    chest = { rgba: resizeRGBA(chest.rgba, chest.w, chest.h, fw, fh), w: fw, h: fh };
-  }
-  const chestIn = [chest.w / dpi, chest.h / dpi];
-  const vector = chestVector(font, name, chestIn[0]);
+  const requested = (Array.isArray(locationsIn) ? locationsIn : []).filter((loc) => loc && LOCATIONS[loc.id]);
+  if (!requested.length) throw new Error("Choose at least one print location.");
 
   const previews = [];
-  const onColor = compositeOn(back.rgba, back.w, back.h, color);
-  previews.push({
-    id: "back-art",
-    group: "art",
-    title: "Back print",
-    bytes: await toJpeg(onColor, back.w, back.h, 900),
-  });
-  const chestOn = compositeOn(chest.rgba, chest.w, chest.h, color);
-  previews.push({
-    id: "chest-art",
-    group: "art",
-    title: `${name} chest`,
-    bytes: await toJpeg(chestOn, chest.w, chest.h, 700),
-  });
-
-  await report(40, "Placing prints on the garments");
-  const mockups = [];
-  for (const g of garments) {
-    const bodyIn = BODY_IN[g.size];
-    for (const view of ["front", "back"]) {
-      const scene = drawGarment(g.kind, view, color, bodyIn);
-      let placed;
-      if (view === "front") {
-        const cx = scene.centerX + 4 * scene.pxPerIn;
-        const top = scene.shoulderY + 3.75 * scene.pxPerIn;
-        placed = placePrint(scene, chest.rgba, chest.w, chest.h, chestWidthIn, cx, top);
-      } else {
-        const top = scene.collarBottom + 3.5 * scene.pxPerIn;
-        placed = placePrint(scene, back.rgba, back.w, back.h, backWidthIn, scene.centerX, top);
+  const prepared = [];
+  for (let index = 0; index < requested.length; index++) {
+    const loc = requested[index];
+    const meta = LOCATIONS[loc.id];
+    const widthIn = clamp(Number(loc.widthIn) || meta.defaultWidth, 0.5, meta.maxWidth);
+    const lock = loc.lock !== false;
+    const pct0 = 4 + Math.round((index / requested.length) * 18);
+    await report(pct0, `Preparing ${meta.label.toLowerCase()}`);
+    let art;
+    const text = (loc.text || name).trim().slice(0, 32);
+    if (meta.text && !(loc.rgba && loc.w && loc.h)) {
+      if (!text) throw new Error("The name plate needs a name or a photo.");
+      const target = Math.round(widthIn * dpi);
+      let chrome = await renderChrome(font, text, target);
+      if (!lock && loc.heightIn) {
+        const boxH = Math.max(16, Math.round(Number(loc.heightIn) * dpi));
+        const scale = Math.min(target / chrome.w, boxH / chrome.h);
+        const fw = Math.max(1, Math.round(chrome.w * scale));
+        const fh = Math.max(1, Math.round(chrome.h * scale));
+        chrome = { rgba: resizeRGBA(chrome.rgba, chrome.w, chrome.h, fw, fh), w: fw, h: fh };
       }
-      const file =
-        g.kind === "tee"
-          ? `mockups/tee-${view}-mockup.png`
-          : `mockups/${view}-mockup.png`;
+      art = { rgba: chrome.rgba, w: chrome.w, h: chrome.h, inches: [chrome.w / dpi, chrome.h / dpi] };
+      art.vector = chestVector(font, text, art.inches[0]);
+      art.text = text;
+    } else {
+      if (!(loc.rgba && loc.w && loc.h)) throw new Error(`${meta.label} needs an image.`);
+      art = await preparePhoto(loc.rgba, loc.w, loc.h, widthIn, loc.heightIn, lock, dpi, profile, settings.removeComplex, report, warnings, meta.label, pct0);
+      art.text = text;
+    }
+    art.id = loc.id;
+    art.meta = meta;
+    art.widthIn = widthIn;
+    prepared.push(art);
+    const onColor = compositeOn(art.rgba, art.w, art.h, color);
+    previews.push({
+      id: `${loc.id}-art`,
+      group: "art",
+      title: meta.label,
+      bytes: await toJpeg(onColor, art.w, art.h, loc.id === "name" || loc.id === "cuff" ? 700 : 900),
+    });
+    art.onColor = onColor;
+  }
+
+  await report(28, "Placing prints on the garments");
+  const mockups = [];
+  for (const art of prepared) {
+    const meta = art.meta;
+    const targets = meta.cuff ? [garments[0]] : garments;
+    for (const g of targets) {
+      const scene = meta.cuff
+        ? drawCuff(color)
+        : drawGarment(g.kind, meta.view, color, BODY_IN[g.size]);
+      const placed = meta.cuff
+        ? placePrint(scene, art.rgba, art.w, art.h, art.widthIn, scene.centerX, scene.collarBottom)
+        : placeOnGarment(meta, scene, art, art.widthIn);
+      const garmentBit = meta.cuff ? "" : g.kind === "tee" ? "tee-" : "";
+      const file = `mockups/${garmentBit}${meta.folder}-mockup.png`;
       const png = encodeRGB(rgbaToRgb(placed.rgba), placed.w, placed.h, 150);
-      mockups.push({ file, png, rgba: placed.rgba, w: placed.w, h: placed.h });
+      mockups.push({ file, png, rgba: placed.rgba, w: placed.w, h: placed.h, id: art.id });
       previews.push({
         id: file,
         group: "mockup",
@@ -393,177 +452,168 @@ export async function buildPackage(font, rgbaIn, width, height, settings, report
     }
   }
 
-  await report(48, "Separating the back print");
-  const backSeps = await buildFilms(
-    back.rgba,
-    back.w,
-    back.h,
-    "back",
-    tuned,
-    backIn[0],
-    backIn[1],
-    "BACK PRINT",
-    "Place centered on the back, top of the art about 3.5 in below the collar.",
-    report,
-    46,
-    previews,
-    dpi,
-  );
-  await report(62, "Separating the front print");
-  const frontSeps = front === back
-    ? backSeps
-    : await buildFilms(
-        front.rgba,
-        front.w,
-        front.h,
-        "front",
-        tuned,
-        frontIn[0],
-        frontIn[1],
-        "FRONT PRINT",
-        "Centered on the front. Use this file when the design is a full front print rather than a left-chest logo.",
-        report,
-        62,
-        previews,
-        dpi,
-      );
-  await report(80, "Separating the chest print");
-  const chestSeps = await buildFilms(
-    chest.rgba,
-    chest.w,
-    chest.h,
-    "chest",
-    tuned,
-    chestIn[0],
-    chestIn[1],
-    `LEFT CHEST  ·  ${name.toUpperCase()}`,
-    "Wearer's left chest: about 3.75 in down from the shoulder seam, centered about 4 in from center front.",
-    report,
-    80,
-    previews,
-    dpi,
-  );
+  const seps = [];
+  for (let index = 0; index < prepared.length; index++) {
+    const art = prepared[index];
+    const meta = art.meta;
+    const pct = 40 + Math.round((index / prepared.length) * 48);
+    await report(pct, `Separating the ${meta.label.toLowerCase()}`);
+    const filmTitle = art.id === "name" ? `${meta.title}  ·  ${(art.text || name).toUpperCase()}` : meta.title;
+    const result = await buildFilms(
+      art.rgba,
+      art.w,
+      art.h,
+      art.id,
+      tuned,
+      art.inches[0],
+      art.inches[1],
+      filmTitle,
+      meta.placement,
+      report,
+      pct,
+      previews,
+      dpi,
+    );
+    seps.push({ art, result });
+  }
 
   await report(92, "Writing the spec sheet and PDFs");
-  const backPng = encodeRGBA(back.rgba, back.w, back.h, dpi);
-  const frontPng = front === back ? backPng : encodeRGBA(front.rgba, front.w, front.h, dpi);
-  const chestPng = encodeRGBA(chest.rgba, chest.w, chest.h, dpi);
-  const backPdf = await buildArtPdf(backPng, backIn[0], backIn[1], "Back print", `Print package for ${name}`);
-  const frontPdf = front === back ? backPdf : await buildArtPdf(frontPng, frontIn[0], frontIn[1], "Front print", `Print package for ${name}`);
-  const chestPdf = await buildVectorPdf(vector, `${name} left-chest logo`, `Print package for ${name}`);
-  let fromPng = null;
-  if (fromSource) fromPng = encodeRGBA(fromSource.rgba, fromSource.w, fromSource.h, dpi);
+  const outputs = [];
+  for (const item of seps) {
+    const { art, result } = item;
+    const meta = art.meta;
+    const stem = meta.stem || `${slug}-name`;
+    const png = encodeRGBA(art.rgba, art.w, art.h, dpi);
+    const pngPath = `${meta.folder}/${stem}.png`;
+    const pdfPath = `${meta.folder}/${stem}.pdf`;
+    let pdf;
+    const extra = [];
+    if (art.vector) {
+      pdf = await buildVectorPdf(art.vector, `${art.text} name plate`, `Print package for ${name}`);
+      extra.push([`${meta.folder}/${stem}.svg`, art.vector.svg, "Vector name plate (silver gradient and dark outline)"]);
+    } else {
+      pdf = await buildArtPdf(png, art.inches[0], art.inches[1], meta.label, `Print package for ${name}`);
+    }
+    outputs.push({
+      art,
+      result,
+      stem,
+      png,
+      pngPath,
+      pdf,
+      pdfPath,
+      extra,
+    });
+  }
 
   const colorName = colorLabel(color);
   const garmentLine = garments.map(garmentPhrase).join(" and ");
-  const files = [
-    ["back/back-print.png", `Back art, transparent PNG, ${back.w}x${back.h} px, ${dpi} DPI`],
-    ["back/back-print.pdf", `Same back art at actual size (${backIn[0].toFixed(2)} x ${backIn[1].toFixed(2)} in)`],
-    ["front/front-print.png", `Full front art, transparent PNG, ${front.w}x${front.h} px, ${dpi} DPI`],
-    ["front/front-print.pdf", `Full front art at actual size (${frontIn[0].toFixed(2)} x ${frontIn[1].toFixed(2)} in)`],
-    [`chest/${slug}-chest.png`, `Left-chest "${name}", transparent PNG, ${chest.w}x${chest.h} px, ${dpi} DPI`],
-    [`chest/${slug}-chest.svg`, "Vector left-chest name (silver gradient and dark outline)"],
-    [`chest/${slug}-chest.pdf`, `Vector left-chest name, actual size (${chestIn[0].toFixed(2)} in wide)`],
-  ];
-  if (fromPng) files.push([`chest/${slug}-chest-from-source.png`, "Alternate chest mark cropped from the source artwork"]);
-  files.push(
-    ["separations/back-separations.pdf", `Screen films for the back: cover + ${backSeps.channels.length} inks`],
-    ["separations/front-separations.pdf", `Screen films for the full front: cover + ${frontSeps.channels.length} inks`],
-    ["separations/chest-separations.pdf", `Screen films for the chest: cover + ${chestSeps.channels.length} inks`],
-    ["separations/README-SEPARATIONS.txt", "How to print the films"],
-  );
-  files.push(
-    [
-      "separations/films/back/",
-      `1-bit films: ${backSeps.channels.map((c) => c.short).join(", ")}`,
-    ],
-    [
-      "separations/films/front/",
-      `1-bit films: ${frontSeps.channels.map((c) => c.short).join(", ")}`,
-    ],
-    [
-      "separations/films/chest/",
-      `600 DPI 1-bit: ${chestSeps.channels.map((c) => c.short).join(", ")}`,
-    ],
-  );
+  const files = [];
+  for (const out of outputs) {
+    const { art } = out;
+    files.push([out.pngPath, `${art.meta.label}, transparent PNG, ${art.w}x${art.h} px, ${dpi} DPI`]);
+    files.push([out.pdfPath, `${art.meta.label} at actual size (${art.inches[0].toFixed(2)} x ${art.inches[1].toFixed(2)} in)`]);
+    for (const extra of out.extra) files.push([extra[0], extra[2]]);
+  }
+  for (const out of outputs) {
+    files.push([
+      `separations/${out.art.meta.folder}-separations.pdf`,
+      `Screen films for the ${out.art.meta.label.toLowerCase()}: cover + ${out.result.channels.length} inks`,
+    ]);
+  }
+  files.push(["separations/README-SEPARATIONS.txt", "How to print the films"]);
+  for (const out of outputs) {
+    files.push([
+      `separations/films/${out.art.meta.folder}/`,
+      `1-bit films: ${out.result.channels.map((c) => c.short).join(", ")}`,
+    ]);
+  }
   for (const mock of mockups) files.push([mock.file, "Placement mockup, not a print file"]);
   files.push(["PRINT-SPEC.pdf", "This specification sheet"], ["README.txt", "Short file guide"]);
 
-  const backPreview = encodeRGB(rgbaToRgb(resizeRGBA(onColor, back.w, back.h, 640, Math.round(640 * (back.h / back.w)))), 640, Math.round(640 * (back.h / back.w)), 100);
-  const chestPrevW = 420;
-  const chestPrevH = Math.round(chestPrevW * (chest.h / chest.w));
-  const chestPreview = encodeRGB(rgbaToRgb(resizeRGBA(chestOn, chest.w, chest.h, chestPrevW, chestPrevH)), chestPrevW, chestPrevH, 100);
-  const mockPreview = mockups[0] ? encodeRGB(rgbaToRgb(resizeRGBA(mockups[0].rgba, mockups[0].w, mockups[0].h, 280, Math.round(280 * (mockups[0].h / mockups[0].w)))), 280, Math.round(280 * (mockups[0].h / mockups[0].w)), 72) : null;
+  const artPreviews = outputs.slice(0, 4).map((out) => {
+    const tw = out.art.id === "name" || out.art.id === "cuff" ? 280 : 420;
+    const th = Math.max(1, Math.round(tw * (out.art.h / out.art.w)));
+    return {
+      caption: out.art.meta.label,
+      png: encodeRGB(rgbaToRgb(resizeRGBA(out.art.onColor, out.art.w, out.art.h, tw, th)), tw, th, 100),
+    };
+  });
+  const firstMock = mockups[0];
+  const mockPreview = firstMock
+    ? encodeRGB(rgbaToRgb(resizeRGBA(firstMock.rgba, firstMock.w, firstMock.h, 220, Math.round(220 * (firstMock.h / firstMock.w)))), 220, Math.round(220 * (firstMock.h / firstMock.w)), 72)
+    : null;
 
   const underbaseNote = darkGarment
     ? "On this dark garment, print the white underbase first (it is choked 1 pt), flash, then the other inks."
     : "The garment is light, so no white underbase is included. Proof it before a production run.";
-
+  const placements = outputs.map((out) => ({
+    title: out.art.meta.title,
+    copy: `${out.art.meta.label}: ${out.art.inches[0].toFixed(2)} in wide by ${out.art.inches[1].toFixed(2)} in tall (${out.art.w} x ${out.art.h} px at ${dpi} DPI). ${out.art.meta.placement} Inks: ${out.result.channels.map((c) => c.short).join(", ")}.`,
+  }));
+  const included = outputs.map((out) => out.art.meta.label.toLowerCase()).join(", ");
   const spec = await buildSpecPdf({
     name,
     brand: "Print Shop Separator",
     garmentLine,
     colorName,
+    dpi,
     methodShort: "DTG / DTF or screen print",
-    garmentCopy: `Garments: ${garmentLine}. Base color ${colorName} (${color}). ${underbaseNote}`,
+    garmentCopy: `Garments: ${garmentLine}. Base color ${colorName} (${color}). Included locations: ${included}. ${underbaseNote}`,
     methodCopy:
-      "Preferred: DTG or DTF, which hold the photographic chrome and fine detail. Screen printing: film-positive separations are in separations/. Each film page is pure black and white, one ink per page, at actual size, with registration marks in the same place on every page. Color swatches and Pantone suggestions sit in the label margin only.",
-    backCopy: `Back: ${backIn[0].toFixed(2)} in wide by ${backIn[1].toFixed(2)} in tall (${back.w} x ${back.h} px at ${dpi} DPI). Center it on the back, top about 3.5 in below the collar. Full front file: ${frontIn[0].toFixed(2)} x ${frontIn[1].toFixed(2)} in (${front.w} x ${front.h} px) for a centered front print.`,
-    chestCopy: `Size ${chestIn[0].toFixed(2)} in wide by ${chestIn[1].toFixed(2)} in tall (${chest.w} x ${chest.h} px at ${dpi} DPI). Place on the wearer's left chest: top of the art about 3.75 in down from the shoulder seam, centered about 4 in from center front toward the wearer's left.`,
+      "Preferred: DTG or DTF, which hold the photographic chrome and fine detail. Screen printing: film-positive separations are in separations/. Each film page is pure black and white, one ink per page, at actual size, with registration marks in the same place on every page. Color swatches and Pantone suggestions sit in the label margin only. Locations that were not selected are not in this package.",
+    placements,
     files,
     notes: [
       `Transparent PNGs at ${dpi} DPI. Do not place them on a white box.`,
       "Do not re-sharpen or auto-enhance the print files.",
+      "Each ink is named from the color in the art (red, green, gray, black, and so on), with the nearest Pantone suggestion in the film margin.",
       "Upscale prefers tiled Real-ESRGAN (realesr-general-x4v3) and falls back to Lanczos. The matte runs after the upscale so chrome edges lose less of their white halo.",
       "Screen films are a limited spot-color reading of the art. DTG or DTF will match a photo more closely.",
       underbaseNote,
       "Mockups are a placement guide only, not print files.",
-      "Chrome should read as metallic silver. Confirm any trademarks in the artwork before printing.",
-      "Chest script is Kaushan Script, used under the SIL Open Font License.",
+      "A typed name plate is Kaushan Script, used under the SIL Open Font License.",
     ],
-    backPreview,
-    chestPreview,
+    artPreviews,
     mockPreview,
   });
 
+  const artLines = outputs
+    .map((out) => `  ${out.pngPath.padEnd(40)} ${out.art.meta.label}, ${out.art.inches[0].toFixed(2)} in wide, ${dpi} DPI`)
+    .join("\n");
+  const sepLines = outputs
+    .map((out) => `  ${`${out.art.meta.folder}-separations.pdf`.padEnd(36)} ${out.art.meta.label.toLowerCase()}, ${out.art.inches[0].toFixed(2)} in wide, ${out.result.channels.length} inks + cover`)
+    .join("\n");
+  const inkLines = outputs
+    .map((out) => `${out.art.meta.label} inks, in print order: ${out.result.channels.map((c) => c.short).join(", ")}.`)
+    .join("\n");
   const readme =
     `${name} — print-ready package\n` +
     `${"=".repeat(Math.min(48, name.length + 24))}\n\n` +
     `Garments: ${garmentLine}. Color: ${colorName} (${color}).\n` +
+    `Locations in this package: ${included}.\n` +
     `Method:   DTG or DTF preferred for photographic art.\n` +
     `          Screen-print films are in separations/ if the shop screens it.\n\n` +
     `Start with PRINT-SPEC.pdf for sizes, placement, and production notes.\n` +
     `For screen printing, also read separations/README-SEPARATIONS.txt.\n\n` +
-    `Key artwork:\n` +
-    `  back/back-print.png                 back print, ${backWidthIn} in wide, ${dpi} DPI, transparent\n` +
-    `  front/front-print.png               full front, ${frontWidthIn} in wide, ${dpi} DPI, transparent\n` +
-    `  chest/${slug}-chest.png             left-chest "${name}", ${chestIn[0].toFixed(2)} in wide, ${dpi} DPI\n` +
-    `  chest/${slug}-chest.svg / .pdf      vector version of the chest logo\n` +
-    (fromPng ? `  chest/${slug}-chest-from-source.png  alternate crop from the source image\n` : "") +
-    `  separations/back-separations.pdf    film positives, one ink per page\n` +
-    `  separations/front-separations.pdf   film positives for the full front\n` +
-    `  separations/chest-separations.pdf   film positives, one ink per page\n\n` +
-    `Chest lettering uses Kaushan Script (SIL Open Font License).\n` +
-    `The back art was enlarged with Lanczos resampling and a light sharpen,\n` +
-    `not a desktop Real-ESRGAN model.\n\n` +
+    `Artwork:\n${artLines}\n\n` +
+    `Separations:\n${sepLines}\n\n` +
+    `A typed name plate uses Kaushan Script (SIL Open Font License).\n` +
+    `Photos are enlarged with tiled Real-ESRGAN when it loads, otherwise Lanczos.\n\n` +
     `Give the print shop the PNG files (and PDFs if they prefer). Mockups are a\n` +
     `visual placement guide only, not print files.\n`;
 
   const sepReadme =
     `SCREEN-PRINT COLOR SEPARATIONS\n` +
     `==============================\n\n` +
-    `One PDF per print location. Page 1 of each is a color composite\n` +
-    `preview and the ink list (not a film). Every following page is a film\n` +
-    `positive: BLACK = that ink prints, WHITE = no ink. The artwork itself\n` +
-    `is pure black and white. The ink name, a color swatch, a Pantone\n` +
+    `One PDF per print location that was included. Page 1 of each is a color\n` +
+    `composite preview and the ink list (not a film). Every following page is\n` +
+    `a film positive: BLACK = that ink prints, WHITE = no ink. The artwork\n` +
+    `itself is pure black and white. The ink name, a color swatch, a Pantone\n` +
     `suggestion, the print order, and the screen (LPI / angle) are in the\n` +
-    `label margin only.\n\n` +
-    `  back-separations.pdf   — back print, ${backIn[0].toFixed(2)} in wide, ${backSeps.channels.length} inks + cover\n` +
-    `  front-separations.pdf  — full front, ${frontIn[0].toFixed(2)} in wide, ${frontSeps.channels.length} inks + cover\n` +
-    `  chest-separations.pdf  — left-chest "${name}", ${chestIn[0].toFixed(2)} in wide, ${chestSeps.channels.length} inks + cover\n\n` +
-    `Back inks, in print order: ${backSeps.channels.map((c) => c.short).join(", ")}.\n` +
-    `Front inks, in print order: ${frontSeps.channels.map((c) => c.short).join(", ")}.\n` +
-    `Chest inks, in print order: ${chestSeps.channels.map((c) => c.short).join(", ")}.\n\n` +
+    `label margin only. Each plate is named for the color it actually prints.\n\n` +
+    `${sepLines}\n\n` +
+    `${inkLines}\n\n` +
     (darkGarment
       ? `Print on a dark garment (${colorName}). Print in the numbered order.\n` +
         `Flash the white underbase before the other screens.\n` +
@@ -572,8 +622,8 @@ export async function buildPackage(font, rgbaIn, width, height, settings, report
       : `The garment color is light (${colorName}), so these films have no white underbase.\n` +
         `Print in the numbered order. Do not scale the films.\n`) +
     `Registration marks are in the same position on every page.\n\n` +
-    `Chrome and tonal areas are clustered-dot halftones at about 50 LPI with\n` +
-    `offset screen angles. 1-bit 600 DPI PNGs of each film are in films/.\n` +
+    `Tonal areas are clustered-dot halftones at about 50 LPI with offset\n` +
+    `screen angles. 1-bit 600 DPI PNGs of each film are in films/<location>/.\n` +
     `This is a limited spot-color interpretation of photographic art; DTG/DTF\n` +
     `will match the original more closely.\n`;
 
@@ -582,22 +632,15 @@ export async function buildPackage(font, rgbaIn, width, height, settings, report
   const add = (path, data) => zip.file(path, data);
   add("README.txt", readme);
   add("PRINT-SPEC.pdf", spec);
-  add("back/back-print.png", backPng);
-  add("back/back-print.pdf", backPdf);
-  add("front/front-print.png", frontPng);
-  add("front/front-print.pdf", frontPdf);
-  add(`chest/${slug}-chest.png`, chestPng);
-  add(`chest/${slug}-chest.svg`, vector.svg);
-  add(`chest/${slug}-chest.pdf`, chestPdf);
-  if (fromPng) add(`chest/${slug}-chest-from-source.png`, fromPng);
+  for (const out of outputs) {
+    add(out.pngPath, out.png);
+    add(out.pdfPath, out.pdf);
+    for (const extra of out.extra) add(extra[0], extra[1]);
+    add(`separations/${out.art.meta.folder}-separations.pdf`, out.result.pdf);
+    for (const film of out.result.pngs) add(`separations/films/${out.art.meta.folder}/${film.name}`, film.png);
+  }
   for (const mock of mockups) add(mock.file, mock.png);
-  add("separations/back-separations.pdf", backSeps.pdf);
-  add("separations/front-separations.pdf", frontSeps.pdf);
-  add("separations/chest-separations.pdf", chestSeps.pdf);
   add("separations/README-SEPARATIONS.txt", sepReadme);
-  for (const film of backSeps.pngs) add(`separations/films/back/${film.name}`, film.png);
-  for (const film of frontSeps.pngs) add(`separations/films/front/${film.name}`, film.png);
-  for (const film of chestSeps.pngs) add(`separations/films/chest/${film.name}`, film.png);
 
   const zipBytes = await zip.generateAsync({
     type: "uint8array",
@@ -605,6 +648,12 @@ export async function buildPackage(font, rgbaIn, width, height, settings, report
     compressionOptions: { level: 6 },
   });
   await report(100, "Ready");
+  const summaryLocations = outputs.map((out) => ({
+    id: out.art.id,
+    label: out.art.meta.label,
+    inks: out.result.channels.map((c) => c.name),
+    inches: out.art.inches,
+  }));
   return {
     zipBytes,
     zipName: `${slug}-print-files.zip`,
@@ -613,13 +662,8 @@ export async function buildPackage(font, rgbaIn, width, height, settings, report
       name,
       slug,
       files: Object.keys(zip.files).filter((p) => !p.endsWith("/")),
-      backInks: backSeps.channels.map((c) => c.name),
-      frontInks: frontSeps.channels.map((c) => c.name),
-      chestInks: chestSeps.channels.map((c) => c.name),
+      locations: summaryLocations,
       warnings,
-      backIn,
-      frontIn,
-      chestIn,
       darkGarment,
     },
   };

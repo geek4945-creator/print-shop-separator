@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "node scripts/copy-ort.mjs && vite build",
     "build:native": "node scripts/build-native.mjs",
-    "preview": "vite preview --host 127.0.0.1 --port 4173"
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "test": "node --test src/lib/separate.test.js"
   },
   "dependencies": {
     "@capacitor/android": "^7.6.10",

@@ -187,6 +187,56 @@ export function drawGarment(kind, view, colorHex, bodyInches, W = 1400, H = 1700
   return { rgba: scene, w: W, h: H, pxPerIn, centerX: cx, shoulderY, collarBottom };
 }
 
+/** A sleeve cuff band, wide enough to show a small plate centered on the rib. */
+export function drawCuff(colorHex, W = 1400, H = 640) {
+  const base = hexToRgb(colorHex);
+  const darkShirt = relLuminance(colorHex) < 0.08;
+  const scene = new Uint8ClampedArray(W * H * 4);
+  const top = Math.round(H * 0.22);
+  const band = Math.round(H * 0.56);
+  for (let y = 0; y < H; y++) {
+    const vy = (y / (H - 1)) * 2 - 1;
+    for (let x = 0; x < W; x++) {
+      const vx = (x / (W - 1)) * 2 - 1;
+      const vig = clamp(1.12 - 0.28 * (vx * vx + vy * vy), 0.72, 1);
+      const bg = 24 * vig;
+      const o = (y * W + x) * 4;
+      const onBand = y >= top && y < top + band;
+      if (!onBand) {
+        scene[o] = scene[o + 1] = scene[o + 2] = bg;
+        scene[o + 3] = 255;
+        continue;
+      }
+      const stripe = ((y - top) % 7) < 2;
+      let r;
+      let g;
+      let b;
+      if (darkShirt) {
+        const shade = stripe ? 28 : 18;
+        r = g = b = shade;
+      } else {
+        const k = stripe ? 0.72 : 0.55;
+        r = clamp(base.r * k, 0, 255);
+        g = clamp(base.g * k, 0, 255);
+        b = clamp(base.b * k, 0, 255);
+      }
+      scene[o] = r;
+      scene[o + 1] = g;
+      scene[o + 2] = b;
+      scene[o + 3] = 255;
+    }
+  }
+  return {
+    rgba: scene,
+    w: W,
+    h: H,
+    pxPerIn: W / 8,
+    centerX: Math.round(W / 2),
+    shoulderY: top,
+    collarBottom: top + Math.round(band * 0.18),
+  };
+}
+
 export function placePrint(scene, printRgba, printW, printH, widthIn, cx, topY) {
   const tw = Math.max(1, Math.round(widthIn * scene.pxPerIn));
   const th = Math.max(1, Math.round(printH * (tw / printW)));

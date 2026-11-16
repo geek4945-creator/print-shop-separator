@@ -5,7 +5,8 @@ export const STORE_KEY = "print-shop-separator-export-v1";
 export const PRESETS = [
   { id: "chest", label: "Left chest 3.5 in", widthIn: 3.5 },
   { id: "back", label: "Full back 12 in", widthIn: 12 },
-  { id: "front", label: "Full front 10 in", widthIn: 10 },
+  { id: "front", label: "Full front 12 in", widthIn: 12 },
+  { id: "nameplate", label: "Name plate 3.75 in", widthIn: 3.75 },
   { id: "youth", label: "Youth back 10 in", widthIn: 10 },
   { id: "sleeve", label: "Sleeve 3 in", widthIn: 3 },
   { id: "hat", label: "Hat 4 in", widthIn: 4 },
@@ -21,8 +22,11 @@ const DEFAULTS = {
   format: "png",
   jpgQuality: 0.92,
   back: { preset: "back", widthIn: 12, heightIn: null, lock: true },
-  front: { preset: "front", widthIn: 10, heightIn: null, lock: true },
+  front: { preset: "front", widthIn: 12, heightIn: null, lock: true },
   chest: { preset: "chest", widthIn: 3.5, heightIn: null, lock: true },
+  name: { preset: "nameplate", widthIn: 3.75, heightIn: null, lock: true },
+  cuff: { preset: "sleeve", widthIn: 3, heightIn: null, lock: true },
+  locations: { back: true, front: false, name: true, cuff: false },
   tools: { preset: "back", widthIn: 12, heightIn: null, lock: true },
 };
 
@@ -37,6 +41,9 @@ export function loadStore() {
       back: { ...DEFAULTS.back, ...(parsed.back || {}) },
       front: { ...DEFAULTS.front, ...(parsed.front || {}) },
       chest: { ...DEFAULTS.chest, ...(parsed.chest || {}) },
+      name: { ...DEFAULTS.name, ...(parsed.name || parsed.chest || {}) },
+      cuff: { ...DEFAULTS.cuff, ...(parsed.cuff || {}) },
+      locations: { ...DEFAULTS.locations, ...(parsed.locations || {}) },
       tools: { ...DEFAULTS.tools, ...(parsed.tools || {}) },
       unit: parsed.unit === "cm" || parsed.unit === "px" ? parsed.unit : "in",
     };

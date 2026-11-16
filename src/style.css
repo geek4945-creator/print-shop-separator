@@ -59,6 +59,11 @@ input[type="text"], input[type="number"], select {
 .swatch.on { outline: 2px solid var(--teal); outline-offset: 2px; }
 .swatch.custom { display: grid; place-items: center; overflow: hidden; }
 .swatch.custom input { border: 0; padding: 0; width: 44px; height: 44px; background: transparent; }
+.location { border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-top: 12px; background: #14161b; }
+.loc-head { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 16px; }
+.loc-head input { width: 22px; height: 22px; }
+.loc-body { margin-top: 8px; }
+.loc-stage img { width: 100%; max-height: 220px; object-fit: contain; background: #0c0d10; border-radius: 10px; }
 .garments { display: grid; gap: 10px; margin-top: 14px; }
 .check { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
 .check input { width: 22px; height: 22px; }

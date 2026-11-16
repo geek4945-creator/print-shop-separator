@@ -1,14 +1,10 @@
-import { mountPackageExports } from "./lib/export-size.js";
+import { DPI_CHOICES, loadStore, mountSizeRow, saveStore } from "./lib/export-size.js";
 import { captureNativePhoto, deliverZip, upscaleProfile } from "./lib/native.js";
 import { initTools } from "./tools.js";
 
 const SIZES = ["XS", "S", "M", "L", "XL", "2XL", "3XL", "4XL"];
+const LOCS = ["back", "front", "name", "cuff"];
 
-const cameraInput = document.querySelector("#camera-input");
-const fileInput = document.querySelector("#file-input");
-const sourcePreview = document.querySelector("#source-preview");
-const stage = document.querySelector("#stage");
-const fileName = document.querySelector("#file-name");
 const generateBtn = document.querySelector("#generate");
 const statusEl = document.querySelector("#status");
 const bar = document.querySelector("#bar");
@@ -20,13 +16,18 @@ const mockupsEl = document.querySelector("#mockups");
 const filmView = document.querySelector("#film-view");
 const filmTitle = document.querySelector("#film-title");
 
-let file = null;
+const artFiles = { back: null, front: null, name: null, cuff: null };
+const sizeRows = {};
+const store = loadStore();
+const shared = { unit: store.unit || "in", dpi: store.dpi || 300 };
+
 let worker = null;
 let zipUrl = null;
 let zipName = "print-files.zip";
 let zipBytesCache = null;
 let films = [];
 let filmIndex = 0;
+let busy = false;
 const urls = [];
 
 function fillSizes(id) {
@@ -51,40 +52,145 @@ function clearUrls() {
   urls.length = 0;
 }
 
-function useFile(next) {
-  if (!next) return;
-  file = next;
-  if (sourcePreview.src) URL.revokeObjectURL(sourcePreview.src);
-  sourcePreview.onload = () => packageSizes.refresh();
-  sourcePreview.src = URL.createObjectURL(next);
-  stage.hidden = false;
-  fileName.textContent = next.name || "Camera photo";
-  generateBtn.disabled = false;
-  errorEl.hidden = true;
+function sourceFor(id) {
+  const img = document.querySelector(`#preview-${id}`);
+  if (!img || !img.naturalWidth) return null;
+  return { w: img.naturalWidth, h: img.naturalHeight };
 }
 
-document.querySelector("#take-photo").addEventListener("click", async () => {
+function locationChecked(id) {
+  return document.querySelector(`#loc-${id}`).checked;
+}
+
+function locationReady(id) {
+  if (!locationChecked(id)) return true;
+  if (artFiles[id]) return true;
+  if (id === "name" && document.querySelector("#name").value.trim()) return true;
+  return false;
+}
+
+function refreshGenerate() {
+  const any = LOCS.some(locationChecked);
+  generateBtn.disabled = busy || !any || !LOCS.every(locationReady);
+}
+
+function persistLocations() {
+  const next = { unit: shared.unit, dpi: shared.dpi, locations: {} };
+  for (const id of LOCS) {
+    next.locations[id] = locationChecked(id);
+    const value = sizeRows[id].read();
+    next[id] = { preset: value.preset, widthIn: value.widthIn, heightIn: value.lock ? null : value.heightIn, lock: value.lock };
+  }
+  saveStore(next);
+}
+
+function setLocationFile(id, next) {
+  artFiles[id] = next || null;
+  const img = document.querySelector(`#preview-${id}`);
+  const stage = document.querySelector(`#stage-${id}`);
+  const label = document.querySelector(`#file-${id}`);
+  if (img.src && img.src.startsWith("blob:")) URL.revokeObjectURL(img.src);
+  if (next) {
+    img.onload = () => sizeRows[id].refresh();
+    img.src = URL.createObjectURL(next);
+    stage.hidden = false;
+    label.textContent = next.name || "Camera photo";
+  } else {
+    img.removeAttribute("src");
+    stage.hidden = true;
+    label.textContent = id === "name" ? "Using the typed name in chrome script." : `No ${id} artwork yet.`;
+  }
+  refreshGenerate();
+}
+
+for (const id of LOCS) {
+  const box = document.querySelector(`#loc-${id}`);
+  if (id in (store.locations || {})) box.checked = !!store.locations[id];
+  document.querySelector(`#body-${id}`).hidden = !box.checked;
+  box.addEventListener("change", () => {
+    document.querySelector(`#body-${id}`).hidden = !box.checked;
+    persistLocations();
+    refreshGenerate();
+  });
+  const state = { ...(store[id] || {}), unit: shared.unit, dpi: shared.dpi };
+  sizeRows[id] = mountSizeRow(document.querySelector(`#size-${id}`), {
+    legend: "Export size",
+    state,
+    getSource: () => sourceFor(id),
+    onChange: persistLocations,
+  });
+}
+
+const dpiSelect = document.querySelector("#package-dpi");
+for (const value of DPI_CHOICES) {
+  const opt = document.createElement("option");
+  opt.value = String(value);
+  opt.textContent = `${value} DPI`;
+  if (value === shared.dpi) opt.selected = true;
+  dpiSelect.append(opt);
+}
+const customOpt = document.createElement("option");
+customOpt.value = "custom";
+customOpt.textContent = "Custom DPI";
+dpiSelect.append(customOpt);
+const customDpi = document.querySelector("#package-dpi-custom");
+customDpi.value = String(shared.dpi);
+customDpi.hidden = DPI_CHOICES.includes(shared.dpi);
+if (!DPI_CHOICES.includes(shared.dpi)) dpiSelect.value = "custom";
+function applyDpi() {
+  shared.dpi = dpiSelect.value === "custom" ? Number(customDpi.value) || 300 : Number(dpiSelect.value);
+  for (const row of Object.values(sizeRows)) row.setDpi(shared.dpi);
+  persistLocations();
+}
+dpiSelect.addEventListener("change", () => {
+  customDpi.hidden = dpiSelect.value !== "custom";
+  applyDpi();
+});
+customDpi.addEventListener("change", applyDpi);
+
+for (const button of document.querySelectorAll("#unit-toggle button")) {
+  button.classList.toggle("on", button.dataset.unit === shared.unit);
+  button.addEventListener("click", () => {
+    shared.unit = button.dataset.unit;
+    for (const other of document.querySelectorAll("#unit-toggle button")) {
+      other.classList.toggle("on", other.dataset.unit === shared.unit);
+    }
+    for (const row of Object.values(sizeRows)) row.setUnit(shared.unit);
+    persistLocations();
+  });
+}
+
+async function pickPhoto(id) {
   try {
     const photo = await captureNativePhoto();
     if (photo) {
-      useFile(photo);
+      setLocationFile(id, photo);
       return;
     }
   } catch (err) {
     errorEl.hidden = false;
     errorEl.textContent = err.message || String(err);
   }
-  cameraInput.click();
+  document.querySelector(`[data-camera-input="${id}"]`).click();
+}
+
+document.querySelector("#view-print").addEventListener("click", (event) => {
+  const camera = event.target.closest("[data-camera]");
+  const upload = event.target.closest("[data-upload]");
+  if (camera) pickPhoto(camera.dataset.camera);
+  if (upload) document.querySelector(`[data-file-input="${upload.dataset.upload}"]`).click();
 });
-document.querySelector("#upload").addEventListener("click", () => fileInput.click());
-cameraInput.addEventListener("change", () => {
-  useFile(cameraInput.files && cameraInput.files[0]);
-  cameraInput.value = "";
-});
-fileInput.addEventListener("change", () => {
-  useFile(fileInput.files && fileInput.files[0]);
-  fileInput.value = "";
-});
+for (const id of LOCS) {
+  document.querySelector(`[data-camera-input="${id}"]`).addEventListener("change", (event) => {
+    setLocationFile(id, event.target.files && event.target.files[0]);
+    event.target.value = "";
+  });
+  document.querySelector(`[data-file-input="${id}"]`).addEventListener("change", (event) => {
+    setLocationFile(id, event.target.files && event.target.files[0]);
+    event.target.value = "";
+  });
+}
+document.querySelector("#name").addEventListener("input", refreshGenerate);
 
 document.querySelector("#swatches").addEventListener("click", (event) => {
   const button = event.target.closest(".swatch[data-color]");
@@ -96,11 +202,6 @@ document.querySelector("#swatches").addEventListener("click", (event) => {
 document.querySelector("#color").addEventListener("input", (event) => {
   for (const el of document.querySelectorAll(".swatch")) el.classList.remove("on");
   event.target.closest(".swatch").classList.add("on");
-});
-
-const packageSizes = mountPackageExports(document.querySelector("#export-sizes"), () => {
-  if (!sourcePreview.naturalWidth) return null;
-  return { w: sourcePreview.naturalWidth, h: sourcePreview.naturalHeight };
 });
 
 function showView(name) {
@@ -116,9 +217,12 @@ function showView(name) {
 document.querySelector("#nav-print").addEventListener("click", () => showView("print"));
 document.querySelector("#nav-tools").addEventListener("click", () => showView("tools"));
 initTools({
-  getPrintFile: () => file,
+  getPrintFile: () => artFiles.back || artFiles.front || artFiles.cuff || artFiles.name,
   usePrintFile: (next) => {
-    useFile(next);
+    const target = LOCS.find((id) => id !== "name" && locationChecked(id)) || "back";
+    document.querySelector(`#loc-${target}`).checked = true;
+    document.querySelector(`#body-${target}`).hidden = false;
+    setLocationFile(target, next);
     showView("print");
   },
 });
@@ -131,24 +235,36 @@ function settings() {
   if (document.querySelector("#tee").checked) {
     garments.push({ kind: "tee", size: document.querySelector("#tee-size").value });
   }
-  const sizes = packageSizes.read();
   return {
     name: document.querySelector("#name").value,
     garmentColor: document.querySelector("#color").value,
     garments,
-    dpi: sizes.dpi,
-    backWidthIn: sizes.back.widthIn,
-    backHeightIn: sizes.back.lock ? null : sizes.back.heightIn,
-    backLock: sizes.back.lock,
-    frontWidthIn: sizes.front.widthIn,
-    frontHeightIn: sizes.front.lock ? null : sizes.front.heightIn,
-    frontLock: sizes.front.lock,
-    chestWidthIn: sizes.chest.widthIn,
-    chestHeightIn: sizes.chest.lock ? null : sizes.chest.heightIn,
-    chestLock: sizes.chest.lock,
+    dpi: shared.dpi,
     inkCount: document.querySelector("#inks").value,
     upscaleProfile: upscaleProfile(),
   };
+}
+
+async function collectLocations() {
+  const locations = [];
+  const transfers = [];
+  for (const id of LOCS) {
+    if (!locationChecked(id)) continue;
+    const size = sizeRows[id].read();
+    const entry = {
+      id,
+      widthIn: size.widthIn,
+      heightIn: size.lock ? null : size.heightIn,
+      lock: size.lock,
+      text: id === "name" ? document.querySelector("#name").value : "",
+    };
+    if (artFiles[id]) {
+      entry.buffer = await artFiles[id].arrayBuffer();
+      transfers.push(entry.buffer);
+    }
+    locations.push(entry);
+  }
+  return { locations, transfers };
 }
 
 function showFilm() {
@@ -158,13 +274,14 @@ function showFilm() {
   filmTitle.textContent = `${filmIndex + 1} / ${films.length} · ${film.title}`;
 }
 
-function setBusy(busy) {
-  generateBtn.disabled = busy || !file;
-  document.querySelector("#download").disabled = busy;
+function setBusy(next) {
+  busy = next;
+  document.querySelector("#download").disabled = next;
+  refreshGenerate();
 }
 
 generateBtn.addEventListener("click", async () => {
-  if (!file) return;
+  if (!LOCS.some(locationChecked) || !LOCS.every(locationReady)) return;
   errorEl.hidden = true;
   results.hidden = true;
   statusEl.hidden = false;
@@ -174,7 +291,14 @@ generateBtn.addEventListener("click", async () => {
   setBusy(true);
   if (worker) worker.terminate();
   worker = new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
-  const buffer = await file.arrayBuffer();
+  worker.onerror = (event) => {
+    console.error(event.message || event);
+    errorEl.hidden = false;
+    errorEl.textContent = event.message || "The print worker failed to start.";
+    statusEl.textContent = "Something went wrong. You can try again.";
+    setBusy(false);
+  };
+  const packed = await collectLocations();
   worker.onmessage = (event) => {
     const msg = event.data;
     if (msg.type === "progress") {
@@ -215,18 +339,19 @@ generateBtn.addEventListener("click", async () => {
     filmIndex = 0;
     showFilm();
     const s = msg.summary;
+    const parts = (s.locations || []).map((loc) => {
+      const inches = loc.inches ? `${loc.inches[0].toFixed(2)} × ${loc.inches[1].toFixed(2)} in` : "";
+      return `${loc.label} (${inches}): ${(loc.inks || []).join(", ")}`;
+    });
     const warn = s.warnings && s.warnings.length ? ` ${s.warnings.join(" ")}` : "";
-    summaryEl.textContent =
-      `${s.files.length} files. Back inks: ${s.backInks.join(", ")}. Front inks: ${(s.frontInks || []).join(", ")}. Chest inks: ${s.chestInks.join(", ")}. ` +
-      `Back ${s.backIn[0].toFixed(2)} × ${s.backIn[1].toFixed(2)} in. Front ${s.frontIn[0].toFixed(2)} × ${s.frontIn[1].toFixed(2)} in. Chest ${s.chestIn[0].toFixed(2)} × ${s.chestIn[1].toFixed(2)} in.` +
-      warn;
+    summaryEl.textContent = `${s.files.length} files. ${parts.join(". ")}.${warn}`;
     results.hidden = false;
     statusEl.textContent = "Package ready.";
     barFill.style.width = "100%";
     setBusy(false);
     results.scrollIntoView({ behavior: "smooth", block: "start" });
   };
-  worker.postMessage({ type: "generate", buffer, settings: settings() }, [buffer]);
+  worker.postMessage({ type: "generate", locations: packed.locations, settings: settings() }, packed.transfers);
 });
 
 document.querySelector("#download").addEventListener("click", async () => {
@@ -253,3 +378,5 @@ document.querySelector("#film-next").addEventListener("click", () => {
   filmIndex = (filmIndex + 1) % films.length;
   showFilm();
 });
+
+refreshGenerate();

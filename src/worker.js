@@ -49,11 +49,28 @@ self.onmessage = async (event) => {
   if (msg.type !== "generate") return;
   const report = (pct, detail) => self.postMessage({ type: "progress", pct, detail });
   try {
-    await report(2, "Opening the image");
-    const image = await decodeImage(msg.buffer);
+    await report(2, "Opening the artwork");
+    const incoming = Array.isArray(msg.locations) && msg.locations.length
+      ? msg.locations
+      : [{ id: "back", buffer: msg.buffer, widthIn: msg.settings?.backWidthIn, heightIn: msg.settings?.backHeightIn, lock: msg.settings?.backLock }];
+    const locations = [];
+    for (const loc of incoming) {
+      let image = null;
+      if (loc.buffer) image = await decodeImage(loc.buffer);
+      locations.push({
+        id: loc.id,
+        rgba: image ? image.rgba : null,
+        w: image ? image.w : 0,
+        h: image ? image.h : 0,
+        widthIn: loc.widthIn,
+        heightIn: loc.heightIn,
+        lock: loc.lock,
+        text: loc.text,
+      });
+    }
     await report(4, "Loading the script font");
     const font = await loadFont();
-    const result = await buildPackage(font, image.rgba, image.w, image.h, {
+    const result = await buildPackage(font, locations, {
       ...msg.settings,
       removeComplex,
     }, report);

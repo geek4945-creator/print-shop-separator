@@ -6,25 +6,25 @@ Open it at [https://geek4945-creator.github.io/print-shop-separator/](https://ge
 
 ## What you get
 
-A ZIP with the same breakdown as a hand-built shop package:
+Check the locations you want. Each checked location is its own folder, with its own art, size, mockup, separations PDF, and films. Unchecked locations are omitted.
 
-- `back/back-print.png` and `back/back-print.pdf` — transparent art at the back size you set (default 12 in), with DPI metadata, and a PDF at actual size
-- `front/front-print.png` and `front/front-print.pdf` — the same art at the full-front size (default 10 in)
-- `chest/<name>-chest.png` plus `.svg` and `.pdf` — the chest name in a chrome script (Kaushan Script, SIL Open Font License)
-- `chest/<name>-chest-from-source.png` when the source has a mark in the usual chest-logo position
-- `mockups/` — crewneck and tee, front and back, in the chosen color and size
-- `PRINT-SPEC.pdf` — garments, placement, method, and the file list
-- `separations/back-separations.pdf` and `separations/chest-separations.pdf` — page 1 is a color composite and ink list; every later page is one ink, pure black and white, actual size, shared registration marks, with the ink name, swatch, Pantone suggestion, and print order in the margin
+- **Back** (on by default, about 12 in wide): `back/back-print.png` and `.pdf`
+- **Front** (off by default, about 12 in wide): `front/front-print.png` and `.pdf`
+- **Name plate** (on by default, about 3.75 in wide): type a name such as Stu, or upload a photo. A typed name is `name/<name>-name.png` plus a chrome-script `.svg` and `.pdf` (Kaushan Script, SIL Open Font License)
+- **Shirt cuff** (off by default, about 3 in wide): `cuff/cuff-print.png` and `.pdf`
+- `mockups/` — one placement mockup per included location, on the crewneck and tee you checked
+- `PRINT-SPEC.pdf` — garments, placement, method, and only the files in this package
+- `separations/<location>-separations.pdf` — page 1 is a color composite and ink list; every later page is one ink, pure black and white, actual size, shared registration marks, with that ink’s name, swatch, nearest Pantone suggestion, and print order in the margin
 - `separations/films/<location>/*-film.png` — 1-bit, 600 DPI film positives
 - `README.txt` and `separations/README-SEPARATIONS.txt`
 
-Dark garments get a white underbase choked about 1 point. Chrome and teal are clustered-dot halftones around 50 LPI with offset screen angles.
+Ink names come from the colors in the art (Black, Gray, Green, Red, Teal, and so on). Dark garments get a white underbase choked about 1 point. Tonal areas are clustered-dot halftones around 50 LPI with offset screen angles.
 
-Export sizes are in inches by default, in 0.25 in steps. Centimeters and pixels are a secondary toggle. Presets cover left chest (3.5 in), full back (12 in), full front (10 in), youth back (10 in), sleeve (3 in), hat (4 in), and koozie/sticker (3 in). DPI can be 150, 200, 300, 600, or a custom value. The last choices are remembered in this browser. Image-tool downloads can be transparent PNG, JPG, SVG, or a PDF at actual size.
+Export sizes are in inches by default, in 0.25 in steps. Centimeters and pixels are a secondary toggle. Presets cover a name plate (3.75 in), left chest (3.5 in), full back (12 in), full front (12 in), youth back (10 in), sleeve (3 in), hat (4 in), and koozie/sticker (3 in). DPI can be 150, 200, 300, 600, or a custom value. The last choices are remembered in this browser. Image-tool downloads can be transparent PNG, JPG, SVG, or a PDF at actual size.
 
 ## Image tools
 
-Open Image tools, then Background, Crop, Resize, Adjust, Colors, Trace, Text, or Trim. Each tool previews on the photo. Background removal can use the in-browser model (flood-fill if that model cannot load), a tolerance slider, tap-to-remove-color, an erase/restore brush with pinch-zoom, and an edge feather. Undo and redo keep the last few steps. Download uses the export size, or send the image into the print package.
+Open Image tools, then Background, Crop, Resize, Adjust, Colors, Trace, Text, or Trim. Each tool previews on the photo. Background removal can use the in-browser model (flood-fill if that model cannot load), a tolerance slider, tap-to-remove-color, an erase/restore brush with pinch-zoom, and an edge feather. Undo and redo keep the last few steps. Download uses the export size, or send the image into the first checked print location.
 
 ## Use it
 
