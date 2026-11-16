@@ -38,6 +38,8 @@ jobs:
           "$MANAGER" "platforms;android-35" "build-tools;35.0.0"
       - name: Install web dependencies
         run: npm ci
+      - name: Test color naming
+        run: npm test
       - name: Build the web app for the native shell
         run: npm run build:native
       - name: Add the Android project
@@ -64,6 +66,8 @@ jobs:
           cache: npm
       - name: Install web dependencies
         run: npm ci
+      - name: Test color naming
+        run: npm test
       - name: Build the web app for the native shell
         run: npm run build:native
         env:

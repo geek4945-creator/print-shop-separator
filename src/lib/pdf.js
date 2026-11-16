@@ -438,8 +438,9 @@ export async function buildSpecPdf(info) {
     font: regular,
     color: rgb(1, 1, 1),
   });
-  page.drawText("300 DPI transparent art", {
-    x: W - 36 - regular.widthOfTextAtSize("300 DPI transparent art", 8),
+  const dpiLine = `${info.dpi || 300} DPI transparent art`;
+  page.drawText(dpiLine, {
+    x: W - 36 - regular.widthOfTextAtSize(dpiLine, 8),
     y: H - 44,
     size: 8,
     font: regular,
@@ -467,38 +468,48 @@ export async function buildSpecPdf(info) {
   body(info.methodCopy, 36, 540);
   y -= 4;
   heading("ARTWORK, SIZE & PLACEMENT");
-  const yStart = y;
-  page.drawText("BACK PRINT", { x: 36, y, size: 8.5, font: bold, color: tealDark });
-  page.drawText("LEFT CHEST", { x: 310, y, size: 8.5, font: bold, color: tealDark });
-  y -= 12;
-  const leftY = y;
-  body(info.backCopy, 36, 260, 7.5);
-  const afterLeft = y;
-  y = leftY;
-  body(info.chestCopy, 310, 250, 7.5);
-  y = Math.min(afterLeft, y) - 6;
-  void yStart;
+  const placements = info.placements && info.placements.length
+    ? info.placements
+    : [
+        { title: "BACK PRINT", copy: info.backCopy || "" },
+        { title: "LEFT CHEST", copy: info.chestCopy || "" },
+      ].filter((place) => place.copy);
+  for (const place of placements) {
+    if (y < 150) break;
+    page.drawText(ascii(place.title), { x: 36, y, size: 8.5, font: bold, color: tealDark });
+    y -= 12;
+    body(place.copy, 36, 540, 7.5);
+    y -= 4;
+  }
 
   heading("PREVIEWS  (placement guide, not to scale)");
-  const backImg = await doc.embedPng(info.backPreview);
-  const chestImg = await doc.embedPng(info.chestPreview);
-  const bh = 74;
-  const bw = bh * (backImg.width / backImg.height);
-  page.drawRectangle({ x: 36, y: y - bh - 4, width: bw + 8, height: bh + 8, color: rgb(0, 0, 0) });
-  page.drawImage(backImg, { x: 40, y: y - bh, width: bw, height: bh });
-  const ch = 70;
-  const cw = Math.min(150, ch * (chestImg.width / chestImg.height));
-  const ch2 = cw * (chestImg.height / chestImg.width);
-  page.drawRectangle({ x: 36 + bw + 24, y: y - ch2 - 4, width: cw + 8, height: ch2 + 8, color: rgb(0, 0, 0) });
-  page.drawImage(chestImg, { x: 40 + bw + 24, y: y - ch2, width: cw, height: ch2 });
-  if (info.mockPreview) {
+  const shots = info.artPreviews && info.artPreviews.length
+    ? info.artPreviews
+    : [info.backPreview, info.chestPreview].filter(Boolean).map((png, index) => ({
+        png,
+        caption: index === 0 ? "Back" : "Name plate",
+      }));
+  let x = 36;
+  let rowBottom = y;
+  for (const shot of shots.slice(0, 4)) {
+    const img = await doc.embedPng(shot.png);
+    const ih = 64;
+    const iw = Math.min(130, ih * (img.width / img.height));
+    if (x + iw > W - 40) break;
+    page.drawRectangle({ x, y: y - ih - 4, width: iw + 8, height: ih + 8, color: rgb(0, 0, 0) });
+    page.drawImage(img, { x: x + 4, y: y - ih, width: iw, height: ih });
+    page.drawText(ascii(shot.caption || ""), { x, y: y - ih - 14, size: 6.5, font: regular, color: charcoal });
+    x += iw + 16;
+    rowBottom = Math.min(rowBottom, y - ih - 14);
+  }
+  if (info.mockPreview && x < W - 80) {
     const mock = await doc.embedPng(info.mockPreview);
-    const mh = 100;
-    const mw = mh * (mock.width / mock.height);
+    const mh = 78;
+    const mw = Math.min(90, mh * (mock.width / mock.height));
     page.drawImage(mock, { x: W - 36 - mw, y: y - mh, width: mw, height: mh });
   }
-  y -= 96;
-  page.drawText("Back and left-chest previews on the chosen garment color.", {
+  y = rowBottom - 16;
+  page.drawText("Previews of the included locations on the chosen garment color.", {
     x: 36,
     y,
     size: 7,

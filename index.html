@@ -17,7 +17,7 @@
       <p class="brand">Print Shop Separator</p>
       <h1>Print files from a photo</h1>
       <p class="lede">
-        Background removed, sized at 300 DPI, with a chrome chest name, garment mockups, a one-page spec, and screen-print films.
+        Pick the print locations you want. Each one gets its own art, size in inches, mockup, and screen-print films.
       </p>
     </header>
 
@@ -27,26 +27,107 @@
         <button type="button" id="nav-tools" role="tab" aria-selected="false">Image tools</button>
       </div>
       <div id="view-print">
-      <section class="card" aria-labelledby="art-heading">
-        <h2 id="art-heading">Artwork</h2>
-        <div class="actions">
-          <button type="button" class="btn primary" id="take-photo">Take photo</button>
-          <button type="button" class="btn" id="upload">Upload image</button>
+      <section class="card" aria-labelledby="loc-heading">
+        <h2 id="loc-heading">Print locations</h2>
+        <p class="hint">Check Front, Back, Name plate, or Shirt cuff. Each checked location has its own art and size. Unchecked locations are left out of the ZIP, the spec, and the films.</p>
+        <div class="unit-toggle" id="unit-toggle">
+          <button type="button" data-unit="in" class="on">Inches</button>
+          <button type="button" data-unit="cm">cm</button>
+          <button type="button" data-unit="px">px</button>
         </div>
-        <input id="camera-input" type="file" accept="image/*" capture="environment" hidden />
-        <input id="file-input" type="file" accept="image/*" hidden />
-        <p class="hint" id="file-name">JPEG or PNG. On a phone, use the camera or your photo library.</p>
-        <div class="stage" id="stage" hidden>
-          <img id="source-preview" alt="Selected artwork" />
-        </div>
+        <label class="field">
+          <span>DPI for every location</span>
+          <select id="package-dpi" aria-label="Output DPI"></select>
+          <input id="package-dpi-custom" type="number" min="72" max="1200" step="1" value="300" aria-label="Custom DPI" hidden />
+        </label>
+        <article class="location" data-loc="back">
+          <label class="loc-head">
+            <input type="checkbox" id="loc-back" checked />
+            <span>Back</span>
+          </label>
+          <div class="loc-body" id="body-back">
+            <p class="hint">Full back. Default about 12 in wide.</p>
+            <div class="actions">
+              <button type="button" class="btn primary" data-camera="back">Take photo</button>
+              <button type="button" class="btn" data-upload="back">Upload image</button>
+            </div>
+            <input data-camera-input="back" type="file" accept="image/*" capture="environment" hidden />
+            <input data-file-input="back" type="file" accept="image/*" hidden />
+            <p class="hint loc-file" id="file-back">No back artwork yet.</p>
+            <div class="stage loc-stage" id="stage-back" hidden>
+              <img id="preview-back" alt="Back artwork" />
+            </div>
+            <div class="loc-size" id="size-back"></div>
+          </div>
+        </article>
+        <article class="location" data-loc="front">
+          <label class="loc-head">
+            <input type="checkbox" id="loc-front" />
+            <span>Front</span>
+          </label>
+          <div class="loc-body" id="body-front" hidden>
+            <p class="hint">Full front. Default about 12 in wide.</p>
+            <div class="actions">
+              <button type="button" class="btn primary" data-camera="front">Take photo</button>
+              <button type="button" class="btn" data-upload="front">Upload image</button>
+            </div>
+            <input data-camera-input="front" type="file" accept="image/*" capture="environment" hidden />
+            <input data-file-input="front" type="file" accept="image/*" hidden />
+            <p class="hint loc-file" id="file-front">No front artwork yet.</p>
+            <div class="stage loc-stage" id="stage-front" hidden>
+              <img id="preview-front" alt="Front artwork" />
+            </div>
+            <div class="loc-size" id="size-front"></div>
+          </div>
+        </article>
+        <article class="location" data-loc="name">
+          <label class="loc-head">
+            <input type="checkbox" id="loc-name" checked />
+            <span>Name plate</span>
+          </label>
+          <div class="loc-body" id="body-name">
+            <p class="hint">Left-chest name, such as Stu. Type it, or upload a photo of the plate. Default about 3.75 in wide.</p>
+            <label class="field">
+              <span>Name text</span>
+              <input id="name" type="text" value="Stu" maxlength="32" autocomplete="off" />
+            </label>
+            <div class="actions">
+              <button type="button" class="btn primary" data-camera="name">Take photo</button>
+              <button type="button" class="btn" data-upload="name">Upload image</button>
+            </div>
+            <input data-camera-input="name" type="file" accept="image/*" capture="environment" hidden />
+            <input data-file-input="name" type="file" accept="image/*" hidden />
+            <p class="hint loc-file" id="file-name">Using the typed name in chrome script.</p>
+            <div class="stage loc-stage" id="stage-name" hidden>
+              <img id="preview-name" alt="Name plate artwork" />
+            </div>
+            <div class="loc-size" id="size-name"></div>
+          </div>
+        </article>
+        <article class="location" data-loc="cuff">
+          <label class="loc-head">
+            <input type="checkbox" id="loc-cuff" />
+            <span>Shirt cuff</span>
+          </label>
+          <div class="loc-body" id="body-cuff" hidden>
+            <p class="hint">Sleeve cuff plate. Default about 3 in wide.</p>
+            <div class="actions">
+              <button type="button" class="btn primary" data-camera="cuff">Take photo</button>
+              <button type="button" class="btn" data-upload="cuff">Upload image</button>
+            </div>
+            <input data-camera-input="cuff" type="file" accept="image/*" capture="environment" hidden />
+            <input data-file-input="cuff" type="file" accept="image/*" hidden />
+            <p class="hint loc-file" id="file-cuff">No cuff artwork yet.</p>
+            <div class="stage loc-stage" id="stage-cuff" hidden>
+              <img id="preview-cuff" alt="Cuff artwork" />
+            </div>
+            <div class="loc-size" id="size-cuff"></div>
+          </div>
+        </article>
       </section>
 
       <section class="card">
         <h2>Print setup</h2>
-        <label class="field">
-          <span>Left-chest name</span>
-          <input id="name" type="text" value="Stu" maxlength="32" autocomplete="off" />
-        </label>
         <div class="field">
           <span>Garment color</span>
           <div class="swatches" id="swatches">
@@ -72,11 +153,10 @@
             <select id="tee-size" aria-label="T-shirt size"></select>
           </label>
         </div>
-        <div id="export-sizes"></div>
         <label class="field">
           <span>Screen-print inks</span>
           <select id="inks">
-            <option value="auto" selected>Auto (about 4–6)</option>
+            <option value="auto" selected>Auto (one plate per color)</option>
             <option value="4">4 inks</option>
             <option value="5">5 inks</option>
             <option value="6">6 inks</option>
@@ -88,7 +168,7 @@
         <button type="button" class="btn primary block" id="generate" disabled>Generate package</button>
         <p class="status" id="status" hidden></p>
         <div class="bar" id="bar" hidden><span id="bar-fill"></span></div>
-        <p class="hint">Everything runs on this device. A 12 inch back print can take a minute on a phone. Keep this tab open.</p>
+        <p class="hint">Everything runs on this device. Each checked location is separated on its own. A 12 inch print can take a minute on a phone. Keep this tab open.</p>
         <p class="error" id="error" hidden></p>
       </section>
 
